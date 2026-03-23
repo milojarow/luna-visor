@@ -2,21 +2,26 @@ const Selection = {
   selected: new Set(),
   anchor: null,
   dragActive: false,
+  dragJustEnded: false,
   dragStart: null,
   boxEl: null,
 
   init() {
+    // Selection box lives on body, not inside the grid
     this.boxEl = document.createElement('div');
     this.boxEl.className = 'selection-box';
     this.boxEl.hidden = true;
-    Gallery.el.appendChild(this.boxEl);
+    document.body.appendChild(this.boxEl);
 
     // Click on cards (delegated)
     Gallery.el.addEventListener('click', (e) => {
-      if (e.detail !== 1) return; // ignore dblclick
+      if (this.dragJustEnded) {
+        this.dragJustEnded = false;
+        return;
+      }
+      if (e.detail !== 1) return;
       const card = e.target.closest('.file-card');
       if (!card) {
-        // Clicked empty area
         this.clear();
         return;
       }
@@ -36,26 +41,22 @@ const Selection = {
       }
     });
 
-    // Drag selection
+    // Drag selection — all in screen (client) coordinates
     Gallery.el.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('.file-card')) return;
       if (e.target.closest('.date-divider')) return;
 
       this.dragActive = true;
-      const rect = Gallery.el.getBoundingClientRect();
-      this.dragStart = {
-        x: e.clientX - rect.left + Gallery.el.scrollLeft,
-        y: e.clientY - rect.top + Gallery.el.scrollTop,
-      };
+      this.dragStart = { x: e.clientX, y: e.clientY };
 
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
         this.clear();
       }
 
       this.boxEl.hidden = false;
-      this.boxEl.style.left = this.dragStart.x + 'px';
-      this.boxEl.style.top = this.dragStart.y + 'px';
+      this.boxEl.style.left = e.clientX + 'px';
+      this.boxEl.style.top = e.clientY + 'px';
       this.boxEl.style.width = '0';
       this.boxEl.style.height = '0';
 
@@ -65,41 +66,25 @@ const Selection = {
     document.addEventListener('mousemove', (e) => {
       if (!this.dragActive) return;
 
-      const rect = Gallery.el.getBoundingClientRect();
-      const curX = e.clientX - rect.left + Gallery.el.scrollLeft;
-      const curY = e.clientY - rect.top + Gallery.el.scrollTop;
-
-      const x = Math.min(this.dragStart.x, curX);
-      const y = Math.min(this.dragStart.y, curY);
-      const w = Math.abs(curX - this.dragStart.x);
-      const h = Math.abs(curY - this.dragStart.y);
+      const x = Math.min(this.dragStart.x, e.clientX);
+      const y = Math.min(this.dragStart.y, e.clientY);
+      const w = Math.abs(e.clientX - this.dragStart.x);
+      const h = Math.abs(e.clientY - this.dragStart.y);
 
       this.boxEl.style.left = x + 'px';
       this.boxEl.style.top = y + 'px';
       this.boxEl.style.width = w + 'px';
       this.boxEl.style.height = h + 'px';
 
-      // Check intersection with cards
-      const boxRect = {
-        left: x, top: y,
-        right: x + w, bottom: y + h,
-      };
-
+      // Intersection check — both in screen coordinates
       Gallery.el.querySelectorAll('.file-card').forEach((card) => {
-        const cardRect = card.getBoundingClientRect();
-        const galRect = Gallery.el.getBoundingClientRect();
-        const cardRelative = {
-          left: cardRect.left - galRect.left + Gallery.el.scrollLeft,
-          top: cardRect.top - galRect.top + Gallery.el.scrollTop,
-          right: cardRect.right - galRect.left + Gallery.el.scrollLeft,
-          bottom: cardRect.bottom - galRect.top + Gallery.el.scrollTop,
-        };
+        const cr = card.getBoundingClientRect();
 
         const intersects = !(
-          cardRelative.right < boxRect.left ||
-          cardRelative.left > boxRect.right ||
-          cardRelative.bottom < boxRect.top ||
-          cardRelative.top > boxRect.bottom
+          cr.right < x ||
+          cr.left > x + w ||
+          cr.bottom < y ||
+          cr.top > y + h
         );
 
         const fileId = card.dataset.fileId;
@@ -114,10 +99,10 @@ const Selection = {
     document.addEventListener('mouseup', () => {
       if (!this.dragActive) return;
       this.dragActive = false;
+      this.dragJustEnded = true;
       this.boxEl.hidden = true;
     });
 
-    // Escape clears selection
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.clear();
     });

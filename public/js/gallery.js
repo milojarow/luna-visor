@@ -39,10 +39,6 @@ const Gallery = {
       }
     }
 
-    // Re-attach selection box if it exists
-    if (typeof Selection !== 'undefined' && Selection.boxEl) {
-      this.el.appendChild(Selection.boxEl);
-    }
   },
 
   renderGrouped(groups) {

@@ -586,7 +586,7 @@ body {
 }
 
 .selection-box {
-  position: absolute;
+  position: fixed;
   border: 2px solid var(--selection);
   background: rgba(0, 175, 175, 0.1);
   border-radius: 6px;
