@@ -31,6 +31,30 @@ const Upload = {
     this.zoneEl.addEventListener('click', (e) => {
       if (e.target === this.zoneEl) this.hide();
     });
+
+    // Ctrl+V paste from clipboard
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+
+      if (files.length === 0) return;
+
+      if (!App.currentClientId) {
+        alert('Select a client first');
+        return;
+      }
+
+      this.show();
+      this.handleFiles(files);
+    });
   },
 
   show() {

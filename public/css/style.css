@@ -474,6 +474,19 @@ body {
   color: var(--text-muted);
 }
 
+.upload-hint {
+  font-size: 0.85rem;
+}
+
+.upload-hint kbd {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
 .upload-limit {
   font-size: 0.75rem;
   opacity: 0.6;
