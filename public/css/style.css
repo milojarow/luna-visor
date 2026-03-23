@@ -15,6 +15,8 @@
   --border: #2a2a4a;
   --success: #4caf50;
   --card-bg: #1e2a45;
+  --card-bg-light: #2a3a5a;
+  --selection: #00AFAF;
 }
 
 body {
@@ -191,6 +193,9 @@ body {
 }
 
 .toolbar-center {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
   flex-shrink: 0;
 }
 
@@ -257,6 +262,59 @@ body {
   border-color: var(--text-muted);
 }
 
+/* Sort controls */
+.sort-controls {
+  display: flex;
+  gap: 2px;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.sort-btn {
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.sort-btn.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.sort-btn:hover:not(.active) {
+  color: var(--text);
+}
+
+.sort-arrow {
+  font-size: 0.65rem;
+  margin-left: 2px;
+}
+
+.group-btn {
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.group-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.group-btn.active {
+  border-color: var(--selection);
+  color: var(--selection);
+}
+
 /* Gallery */
 .gallery {
   flex: 1;
@@ -265,6 +323,7 @@ body {
   display: grid;
   gap: 1rem;
   align-content: start;
+  position: relative;
 }
 
 .gallery.size-normal {
@@ -505,4 +564,45 @@ body {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+/* Selection */
+.file-card.selected {
+  border-color: var(--selection);
+  box-shadow: 0 0 0 2px rgba(0, 175, 175, 0.3);
+}
+
+.selection-box {
+  position: absolute;
+  border: 2px solid var(--selection);
+  background: rgba(0, 175, 175, 0.1);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.selection-box[hidden] {
+  display: none;
+}
+
+/* Date dividers */
+.date-divider {
+  grid-column: 1 / -1;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+
+/* Referenced files indicator */
+.file-card-info-referenced {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--card-bg),
+    var(--card-bg) 4px,
+    var(--card-bg-light) 4px,
+    var(--card-bg-light) 8px
+  );
 }

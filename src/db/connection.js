@@ -12,4 +12,11 @@ db.pragma('foreign_keys = ON');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Migration: add referenced column
+try {
+  db.exec('ALTER TABLE files ADD COLUMN referenced INTEGER DEFAULT 0');
+} catch {
+  // Column already exists
+}
+
 module.exports = db;

@@ -54,4 +54,6 @@ app.use(require('./src/middleware/error'));
 
 app.listen(config.PORT, '127.0.0.1', () => {
   console.log(`Luna Visor running on http://127.0.0.1:${config.PORT}`);
+  const { startPeriodicScan } = require('./src/services/log-scanner');
+  startPeriodicScan(5 * 60 * 1000); // scan CDN logs every 5 minutes
 });

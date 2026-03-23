@@ -18,4 +18,5 @@ module.exports = {
   MEDIA_FILES_PATH: path.join(process.env.MEDIA_PATH, 'files'),
   MEDIA_DB_PATH: path.join(process.env.MEDIA_PATH, 'db'),
   CDN_BASE_URL: process.env.CDN_BASE_URL.replace(/\/$/, ''),
+  CDN_ACCESS_LOG: process.env.CDN_ACCESS_LOG || '/var/log/caddy/cdn-access.log',
 };

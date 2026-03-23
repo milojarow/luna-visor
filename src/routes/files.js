@@ -85,4 +85,10 @@ router.post('/:id/copy', async (req, res) => {
   res.status(201).json(fileToResponse(file));
 });
 
+router.post('/scan-references', (_req, res) => {
+  const { scanReferences } = require('../services/log-scanner');
+  const count = scanReferences();
+  res.json({ ok: true, newly_referenced: count });
+});
+
 module.exports = router;

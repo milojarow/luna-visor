@@ -14,6 +14,7 @@ const App = {
     this.cdnBaseUrl = ''; // Will be set from file responses
 
     ContextMenu.init();
+    Sort.init();
     Upload.init();
 
     // Size toggle
@@ -45,6 +46,7 @@ const App = {
     await this.loadClients();
     await this.loadCdnBase();
     Gallery.init(this.cdnBaseUrl);
+    Selection.init();
     await this.loadFiles();
   },
 
@@ -148,6 +150,44 @@ const App = {
     } catch (err) {
       alert(err.message);
     }
+  },
+
+  async confirmBulkDelete(files) {
+    if (!confirm(`Delete ${files.length} files? This cannot be undone.`)) return;
+    try {
+      for (const f of files) await API.deleteFile(f.id);
+      Selection.clear();
+      await this.loadFiles();
+      await this.loadClients();
+    } catch (err) {
+      alert(err.message);
+    }
+  },
+
+  async showBulkMoveDialog(files) {
+    const items = this.clients.map((c) => ({
+      label: c.name,
+      action: async () => {
+        for (const f of files) await API.moveFile(f.id, c.id);
+        Selection.clear();
+        await this.loadFiles();
+        await this.loadClients();
+      },
+    }));
+    ContextMenu.show(200, 200, items);
+  },
+
+  async showBulkCopyDialog(files) {
+    const items = this.clients.map((c) => ({
+      label: c.name,
+      action: async () => {
+        for (const f of files) await API.copyFile(f.id, c.id);
+        Selection.clear();
+        await this.loadFiles();
+        await this.loadClients();
+      },
+    }));
+    ContextMenu.show(200, 200, items);
   },
 
   async confirmDelete(file) {

@@ -14,7 +14,6 @@ const Gallery = {
     this.currentSize = size;
     this.el.classList.remove('size-normal', 'size-big', 'size-bigger');
     this.el.classList.add(`size-${size}`);
-    // Update image sources to match new size
     this.el.querySelectorAll('.file-card-preview[data-type="image"]').forEach((img) => {
       const fileId = img.dataset.fileId;
       const ext = img.dataset.ext;
@@ -31,9 +30,32 @@ const Gallery = {
       return;
     }
 
-    for (const file of files) {
-      const card = this.createCard(file);
-      this.el.appendChild(card);
+    if (Sort.groupByDate) {
+      this.renderGrouped(Sort.applyGrouped(files));
+    } else {
+      const sorted = Sort.apply(files);
+      for (const file of sorted) {
+        this.el.appendChild(this.createCard(file));
+      }
+    }
+
+    // Re-attach selection box if it exists
+    if (typeof Selection !== 'undefined' && Selection.boxEl) {
+      this.el.appendChild(Selection.boxEl);
+    }
+  },
+
+  renderGrouped(groups) {
+    for (const group of groups) {
+      const divider = document.createElement('div');
+      divider.className = 'date-divider';
+      const d = new Date(group.date + 'T00:00:00');
+      divider.textContent = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      this.el.appendChild(divider);
+
+      for (const file of group.files) {
+        this.el.appendChild(this.createCard(file));
+      }
     }
   },
 
@@ -82,6 +104,7 @@ const Gallery = {
 
     const info = document.createElement('div');
     info.className = 'file-card-info';
+    if (file.referenced) info.classList.add('file-card-info-referenced');
     info.innerHTML = `
       <div class="file-card-name" title="${file.original_name}">${file.original_name}</div>
       <div class="file-card-meta">${formatSize(file.size_bytes)}</div>
@@ -103,6 +126,45 @@ const Gallery = {
   },
 
   showContextMenu(x, y, file) {
+    // Multi-selection context menu
+    if (Selection.selected.size > 1 && Selection.selected.has(file.id)) {
+      const selectedFiles = Selection.getSelectedFiles();
+      const count = selectedFiles.length;
+      const items = [
+        {
+          label: `Copy ${count} URLs`,
+          action: async () => {
+            const urls = selectedFiles.map((f) => f.cdn_url).join('\n');
+            await copyToClipboard(urls);
+          },
+        },
+        { separator: true },
+        {
+          label: `Move ${count} files to...`,
+          action: () => App.showBulkMoveDialog(selectedFiles),
+        },
+        {
+          label: `Copy ${count} files to...`,
+          action: () => App.showBulkCopyDialog(selectedFiles),
+        },
+        { separator: true },
+        {
+          label: `Delete ${count} files`,
+          danger: true,
+          action: () => App.confirmBulkDelete(selectedFiles),
+        },
+      ];
+      ContextMenu.show(x, y, items);
+      return;
+    }
+
+    // If right-clicking a non-selected card, select it
+    if (!Selection.selected.has(file.id)) {
+      Selection.clear();
+      Selection.select(file.id);
+      Selection.anchor = file.id;
+    }
+
     const items = [
       {
         label: 'Copy CDN URL',
