@@ -382,6 +382,10 @@ body {
 }
 
 /* Upload zone */
+.upload-zone[hidden] {
+  display: none;
+}
+
 .upload-zone {
   position: fixed;
   inset: 0;
@@ -409,6 +413,11 @@ body {
 .upload-overlay p {
   margin-bottom: 1rem;
   color: var(--text-muted);
+}
+
+.upload-limit {
+  font-size: 0.75rem;
+  opacity: 0.6;
 }
 
 .upload-overlay input[type="file"] {
