@@ -29,7 +29,7 @@ app.use(session({
   },
 }));
 
-const requireAuth = require('./src/middleware/auth');
+const { requireAuth, requireSession } = require('./src/middleware/auth');
 
 // Static files (login page must be accessible without auth)
 app.use('/login.html', express.static(path.join(__dirname, 'public', 'login.html')));
@@ -46,8 +46,9 @@ app.use(requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API routes
-app.use('/api/clients', require('./src/routes/clients'));
+app.use('/api/clients', requireSession, require('./src/routes/clients'));
 app.use('/api/files', require('./src/routes/files'));
+app.use('/api/api-keys', requireSession, require('./src/routes/api-keys'));
 
 // Error handler
 app.use(require('./src/middleware/error'));

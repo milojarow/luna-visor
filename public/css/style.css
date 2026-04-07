@@ -609,6 +609,148 @@ body {
   margin-bottom: 0.25rem;
 }
 
+/* API Keys modal */
+.api-keys-modal {
+  min-width: 480px;
+  max-width: 600px;
+}
+
+.api-keys-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.api-keys-header h3 {
+  margin-bottom: 0;
+}
+
+.api-keys-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0.75rem 0;
+}
+
+.api-key-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+}
+
+.api-key-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.api-key-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.api-key-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.btn-icon-danger {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.btn-icon-danger:hover {
+  color: var(--accent);
+  background: rgba(233, 69, 96, 0.1);
+}
+
+.api-keys-create {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.api-keys-create h4 {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+
+.api-keys-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.api-keys-form input,
+.api-keys-form select {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.api-keys-form input:focus,
+.api-keys-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.api-keys-form select {
+  flex: 0.7;
+}
+
+.api-keys-form .btn-primary {
+  flex-shrink: 0;
+}
+
+.api-key-reveal {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.api-key-warning {
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
+}
+
+.api-key-reveal-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.api-key-reveal-row input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+
+.api-key-reveal-row .btn-secondary {
+  flex-shrink: 0;
+}
+
 /* Referenced files indicator */
 .file-card-info-referenced {
   background: repeating-linear-gradient(

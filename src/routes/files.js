@@ -3,6 +3,7 @@ const multer = require('multer');
 const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile } = require('../services/file-manager');
+const { requireSession } = require('../middleware/auth');
 
 const upload = multer({
   dest: '/tmp/luna-visor-uploads/',
@@ -17,7 +18,7 @@ function fileToResponse(file) {
   return { ...file, cdn_url: cdnUrl };
 }
 
-router.get('/', (req, res) => {
+router.get('/', requireSession, (req, res) => {
   const { client_id } = req.query;
   let files;
   if (client_id) {
@@ -28,14 +29,16 @@ router.get('/', (req, res) => {
   res.json(files.map(fileToResponse));
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', requireSession, (req, res) => {
   const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
   res.json(fileToResponse(file));
 });
 
 router.post('/upload', upload.array('files', 20), async (req, res) => {
-  const { client_id } = req.body;
+  const isApiKey = req.authMethod === 'api-key';
+  const client_id = isApiKey ? req.apiKeyClientId : req.body.client_id;
+
   if (!client_id) {
     return res.status(400).json({ error: 'client_id required' });
   }
@@ -56,10 +59,14 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
     }
   }
 
+  if (isApiKey) {
+    const minimal = results.map(r => r.error ? { error: r.error } : { cdn_url: r.cdn_url });
+    return res.status(201).json(minimal);
+  }
   res.status(201).json(results);
 });
 
-router.patch('/:id', (req, res) => {
+router.patch('/:id', requireSession, (req, res) => {
   const { client_id } = req.body;
   if (!client_id) {
     return res.status(400).json({ error: 'client_id required' });
@@ -69,13 +76,13 @@ router.patch('/:id', (req, res) => {
   res.json(fileToResponse(file));
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireSession, (req, res) => {
   const file = deleteFile(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
   res.json({ ok: true });
 });
 
-router.post('/:id/copy', async (req, res) => {
+router.post('/:id/copy', requireSession, async (req, res) => {
   const { client_id } = req.body;
   if (!client_id) {
     return res.status(400).json({ error: 'client_id required' });
@@ -85,7 +92,7 @@ router.post('/:id/copy', async (req, res) => {
   res.status(201).json(fileToResponse(file));
 });
 
-router.post('/scan-references', (_req, res) => {
+router.post('/scan-references', requireSession, (_req, res) => {
   const { scanReferences } = require('../services/log-scanner');
   const count = scanReferences();
   res.json({ ok: true, newly_referenced: count });

@@ -37,6 +37,9 @@ const App = {
     // Add client button
     document.getElementById('btn-add-client').addEventListener('click', () => this.promptNewClient());
 
+    // API Keys
+    document.getElementById('btn-api-keys').addEventListener('click', () => ApiKeys.show());
+
     // Logout
     document.getElementById('btn-logout').addEventListener('click', async () => {
       await API.logout();

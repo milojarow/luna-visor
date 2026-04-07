@@ -50,5 +50,9 @@ const API = {
     });
   },
 
+  getApiKeys() { return this.request('GET', '/api/api-keys'); },
+  createApiKey(name, clientId) { return this.request('POST', '/api/api-keys', { name, client_id: clientId }); },
+  deleteApiKey(id) { return this.request('DELETE', `/api/api-keys/${id}`); },
+
   logout() { return this.request('POST', '/api/auth/logout'); },
 };

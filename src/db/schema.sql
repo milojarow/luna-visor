@@ -18,3 +18,12 @@ CREATE TABLE IF NOT EXISTS files (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_preview TEXT NOT NULL,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    created_at TEXT DEFAULT (datetime('now'))
+);

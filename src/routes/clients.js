@@ -51,6 +51,10 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const apiKeyCount = db.prepare('SELECT COUNT(*) as count FROM api_keys WHERE client_id = ?').get(req.params.id);
+  if (apiKeyCount && apiKeyCount.count > 0) {
+    return res.status(409).json({ error: `Client has ${apiKeyCount.count} API key(s). Revoke them first.` });
+  }
   const fileCount = db.prepare('SELECT COUNT(*) as count FROM files WHERE client_id = ?').get(req.params.id);
   if (fileCount && fileCount.count > 0) {
     return res.status(409).json({ error: `Client has ${fileCount.count} files. Move or delete them first.` });
