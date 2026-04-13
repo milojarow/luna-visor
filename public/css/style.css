@@ -353,6 +353,8 @@ body {
   border: 1px solid var(--border);
   cursor: pointer;
   transition: border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .file-card:hover {

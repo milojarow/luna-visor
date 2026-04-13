@@ -111,4 +111,57 @@ async function copyFile(fileId, targetClientId) {
   return db.prepare('SELECT * FROM files WHERE id = ?').get(newUuid);
 }
 
-module.exports = { saveFile, deleteFile, moveFile, copyFile };
+async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) {
+  const existing = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
+  if (!existing) return null;
+
+  // Delete old physical files (original + variants)
+  const base = path.join(config.MEDIA_FILES_PATH, fileId);
+  const oldPatterns = [
+    `${base}.${existing.extension}`,
+    `${base}-normal.${existing.extension}`,
+    `${base}-big.${existing.extension}`,
+    `${base}-bigger.${existing.extension}`,
+    `${base}-thumb.jpg`,
+  ];
+  for (const p of oldPatterns) {
+    try { fs.unlinkSync(p); } catch {}
+  }
+
+  // Save new file with same UUID
+  const ext = path.extname(originalName).slice(1).toLowerCase();
+  const type = getFileType(ext);
+  const destPath = path.join(config.MEDIA_FILES_PATH, `${fileId}.${ext}`);
+
+  fs.copyFileSync(tempPath, destPath);
+  fs.unlinkSync(tempPath);
+
+  let hasResized = 0;
+  let hasThumbnail = 0;
+
+  if (type === 'image') {
+    try {
+      await processImage(destPath, fileId, ext);
+      hasResized = 1;
+    } catch (err) {
+      console.error(`Failed to process image ${originalName}:`, err.message);
+    }
+  } else if (type === 'video') {
+    try {
+      await extractThumbnail(destPath, fileId);
+      hasThumbnail = 1;
+    } catch (err) {
+      console.error(`Failed to extract thumbnail for ${originalName}:`, err.message);
+    }
+  }
+
+  db.prepare(`
+    UPDATE files SET original_name = ?, extension = ?, mime_type = ?, size_bytes = ?,
+    type = ?, has_thumbnail = ?, has_resized = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(originalName, ext, mimeType, sizeBytes, type, hasThumbnail, hasResized, fileId);
+
+  return db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
+}
+
+module.exports = { saveFile, deleteFile, moveFile, copyFile, replaceFile };
