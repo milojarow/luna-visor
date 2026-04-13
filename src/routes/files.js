@@ -1,8 +1,11 @@
 const { Router } = require('express');
+const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 const db = require('../db/connection');
 const config = require('../config');
-const { saveFile, deleteFile, moveFile, copyFile } = require('../services/file-manager');
+const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
+const { generateCover, getBranding } = require('../services/cover-generator');
 const { requireSession } = require('../middleware/auth');
 
 const upload = multer({
@@ -76,7 +79,72 @@ router.patch('/:id', requireSession, (req, res) => {
   res.json(fileToResponse(file));
 });
 
-router.delete('/:id', requireSession, (req, res) => {
+router.post('/:id/replace', upload.single('file'), async (req, res) => {
+  // API key: verify file belongs to the key's client
+  if (req.authMethod === 'api-key') {
+    const existing = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'File not found' });
+    if (existing.client_id !== req.apiKeyClientId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+  }
+  if (!req.file) {
+    return res.status(400).json({ error: 'File required' });
+  }
+  const file = await replaceFile(req.params.id, req.file.path, req.file.originalname, req.file.mimetype, req.file.size);
+  if (!file) return res.status(404).json({ error: 'File not found' });
+  const response = fileToResponse(file);
+  if (req.authMethod === 'api-key') {
+    return res.json({ cdn_url: response.cdn_url });
+  }
+  res.json(response);
+});
+
+async function handleCoverGeneration(req, res, format, width, height) {
+  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+  if (!file) return res.status(404).json({ error: 'File not found' });
+  if (req.authMethod === 'api-key' && file.client_id !== req.apiKeyClientId) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  if (file.type !== 'image') {
+    return res.status(400).json({ error: 'Source file must be an image' });
+  }
+
+  const brand = getBranding(file.client_id);
+  if (!brand.formats.includes(format)) {
+    return res.status(400).json({ error: `Format '${format}' not supported for this client` });
+  }
+
+  const sourcePath = path.join(config.MEDIA_FILES_PATH, `${file.id}.${file.extension}`);
+  const sourceBuffer = fs.readFileSync(sourcePath);
+  const coverBuffer = await generateCover({ sourceBuffer, data: req.body, width, height, clientId: file.client_id });
+
+  const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.jpg`);
+  fs.writeFileSync(tmpPath, coverBuffer);
+  const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.jpg`;
+  const saved = await saveFile(tmpPath, coverName, 'image/jpeg', coverBuffer.length, file.client_id);
+
+  const response = fileToResponse(saved);
+  if (req.authMethod === 'api-key') {
+    return res.status(201).json({ cdn_url: response.cdn_url });
+  }
+  res.status(201).json(response);
+}
+
+router.post('/:id/story', (req, res) => handleCoverGeneration(req, res, 'story', 1080, 1920));
+router.post('/:id/cover', (req, res) => handleCoverGeneration(req, res, 'cover', 1080, 1350));
+router.post('/:id/square', (req, res) => handleCoverGeneration(req, res, 'square', 1080, 1080));
+router.post('/:id/fb', (req, res) => handleCoverGeneration(req, res, 'fb', 1080, 1080));
+
+router.delete('/:id', (req, res) => {
+  // API key: verify file belongs to the key's client
+  if (req.authMethod === 'api-key') {
+    const file = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    if (file.client_id !== req.apiKeyClientId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+  }
   const file = deleteFile(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
   res.json({ ok: true });

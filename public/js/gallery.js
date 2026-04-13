@@ -103,7 +103,7 @@ const Gallery = {
     if (file.referenced) info.classList.add('file-card-info-referenced');
     info.innerHTML = `
       <div class="file-card-name" title="${file.original_name}">${file.original_name}</div>
-      <div class="file-card-meta">${formatSize(file.size_bytes)}</div>
+      <div class="file-card-meta">${formatSize(file.size_bytes)} &middot; ${formatDate(file.created_at)}</div>
     `;
     card.appendChild(info);
 
@@ -196,4 +196,10 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'Z');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+    d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
