@@ -3,7 +3,8 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db/connection');
 const config = require('../config');
-const { processImage, extractThumbnail } = require('./file-processor');
+const { processImage, processImageWithPolicy, extractThumbnail } = require('./file-processor');
+const { getBranding } = require('./branding');
 
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'mkv']);
@@ -18,34 +19,56 @@ async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId) {
   const ext = path.extname(originalName).slice(1).toLowerCase();
   const uuid = uuidv4();
   const type = getFileType(ext);
-  const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
 
-  fs.copyFileSync(tempPath, destPath);
-  fs.unlinkSync(tempPath);
+  const brand = getBranding(clientId);
+  const policy = brand.storagePolicy;
+  const applyPolicy = policy && type === 'image' && ext !== 'gif';
 
+  let finalExt = ext;
+  let finalMimeType = mimeType;
+  let finalSize = sizeBytes;
   let hasResized = 0;
   let hasThumbnail = 0;
 
-  if (type === 'image') {
+  if (applyPolicy) {
     try {
-      await processImage(destPath, uuid, ext);
+      const result = await processImageWithPolicy(tempPath, uuid, policy);
+      finalExt = result.extension;
+      finalMimeType = result.mimeType;
+      finalSize = result.size;
       hasResized = 1;
     } catch (err) {
-      console.error(`Failed to process image ${originalName}:`, err.message);
+      console.error(`Policy processing failed for ${originalName}, falling back to raw:`, err.message);
+      const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
+      fs.copyFileSync(tempPath, destPath);
     }
-  } else if (type === 'video') {
-    try {
-      await extractThumbnail(destPath, uuid);
-      hasThumbnail = 1;
-    } catch (err) {
-      console.error(`Failed to extract thumbnail for ${originalName}:`, err.message);
+    fs.unlinkSync(tempPath);
+  } else {
+    const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
+    fs.copyFileSync(tempPath, destPath);
+    fs.unlinkSync(tempPath);
+
+    if (type === 'image') {
+      try {
+        await processImage(destPath, uuid, ext);
+        hasResized = 1;
+      } catch (err) {
+        console.error(`Failed to process image ${originalName}:`, err.message);
+      }
+    } else if (type === 'video') {
+      try {
+        await extractThumbnail(destPath, uuid);
+        hasThumbnail = 1;
+      } catch (err) {
+        console.error(`Failed to extract thumbnail for ${originalName}:`, err.message);
+      }
     }
   }
 
   db.prepare(`
     INSERT INTO files (id, original_name, extension, mime_type, size_bytes, client_id, type, has_thumbnail, has_resized)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(uuid, originalName, ext, mimeType, sizeBytes, clientId, type, hasThumbnail, hasResized);
+  `).run(uuid, originalName, finalExt, finalMimeType, finalSize, clientId, type, hasThumbnail, hasResized);
 
   return db.prepare('SELECT * FROM files WHERE id = ?').get(uuid);
 }
@@ -54,17 +77,9 @@ function deleteFile(fileId) {
   const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   if (!file) return null;
 
-  const base = path.join(config.MEDIA_FILES_PATH, fileId);
-  const patterns = [
-    `${base}.${file.extension}`,
-    `${base}-normal.${file.extension}`,
-    `${base}-big.${file.extension}`,
-    `${base}-bigger.${file.extension}`,
-    `${base}-thumb.jpg`,
-  ];
-
-  for (const p of patterns) {
-    try { fs.unlinkSync(p); } catch {}
+  const matches = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
+  for (const f of matches) {
+    try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
   }
 
   db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
@@ -93,9 +108,10 @@ async function copyFile(fileId, targetClientId) {
   const srcBase = path.join(config.MEDIA_FILES_PATH, fileId);
   const dstBase = path.join(config.MEDIA_FILES_PATH, newUuid);
 
-  const suffixes = ['', '-normal', '-big', '-bigger', '-thumb'];
+  const suffixes = ['', '-normal', '-md', '-thumb'];
   for (const suffix of suffixes) {
-    const ext = suffix === '-thumb' ? 'jpg' : file.extension;
+    // -thumb is jpg for video thumbnails, but same-as-file-ext for policy-generated image thumbs
+    const ext = suffix === '-thumb' && file.type === 'video' ? 'jpg' : file.extension;
     const src = `${srcBase}${suffix}.${ext}`;
     const dst = `${dstBase}${suffix}.${ext}`;
     try {
@@ -115,43 +131,57 @@ async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) 
   const existing = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   if (!existing) return null;
 
-  // Delete old physical files (original + variants)
-  const base = path.join(config.MEDIA_FILES_PATH, fileId);
-  const oldPatterns = [
-    `${base}.${existing.extension}`,
-    `${base}-normal.${existing.extension}`,
-    `${base}-big.${existing.extension}`,
-    `${base}-bigger.${existing.extension}`,
-    `${base}-thumb.jpg`,
-  ];
-  for (const p of oldPatterns) {
-    try { fs.unlinkSync(p); } catch {}
+  // Clean all physical files for this UUID (original + any variant, any scheme)
+  const matches = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
+  for (const f of matches) {
+    try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
   }
 
-  // Save new file with same UUID
   const ext = path.extname(originalName).slice(1).toLowerCase();
   const type = getFileType(ext);
-  const destPath = path.join(config.MEDIA_FILES_PATH, `${fileId}.${ext}`);
 
-  fs.copyFileSync(tempPath, destPath);
-  fs.unlinkSync(tempPath);
+  const brand = getBranding(existing.client_id);
+  const policy = brand.storagePolicy;
+  const applyPolicy = policy && type === 'image' && ext !== 'gif';
 
+  let finalExt = ext;
+  let finalMimeType = mimeType;
+  let finalSize = sizeBytes;
   let hasResized = 0;
   let hasThumbnail = 0;
 
-  if (type === 'image') {
+  if (applyPolicy) {
     try {
-      await processImage(destPath, fileId, ext);
+      const result = await processImageWithPolicy(tempPath, fileId, policy);
+      finalExt = result.extension;
+      finalMimeType = result.mimeType;
+      finalSize = result.size;
       hasResized = 1;
     } catch (err) {
-      console.error(`Failed to process image ${originalName}:`, err.message);
+      console.error(`Policy processing failed for ${originalName}, falling back to raw:`, err.message);
+      const destPath = path.join(config.MEDIA_FILES_PATH, `${fileId}.${ext}`);
+      fs.copyFileSync(tempPath, destPath);
     }
-  } else if (type === 'video') {
-    try {
-      await extractThumbnail(destPath, fileId);
-      hasThumbnail = 1;
-    } catch (err) {
-      console.error(`Failed to extract thumbnail for ${originalName}:`, err.message);
+    fs.unlinkSync(tempPath);
+  } else {
+    const destPath = path.join(config.MEDIA_FILES_PATH, `${fileId}.${ext}`);
+    fs.copyFileSync(tempPath, destPath);
+    fs.unlinkSync(tempPath);
+
+    if (type === 'image') {
+      try {
+        await processImage(destPath, fileId, ext);
+        hasResized = 1;
+      } catch (err) {
+        console.error(`Failed to process image ${originalName}:`, err.message);
+      }
+    } else if (type === 'video') {
+      try {
+        await extractThumbnail(destPath, fileId);
+        hasThumbnail = 1;
+      } catch (err) {
+        console.error(`Failed to extract thumbnail for ${originalName}:`, err.message);
+      }
     }
   }
 
@@ -159,7 +189,7 @@ async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) 
     UPDATE files SET original_name = ?, extension = ?, mime_type = ?, size_bytes = ?,
     type = ?, has_thumbnail = ?, has_resized = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(originalName, ext, mimeType, sizeBytes, type, hasThumbnail, hasResized, fileId);
+  `).run(originalName, finalExt, finalMimeType, finalSize, type, hasThumbnail, hasResized, fileId);
 
   return db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
 }

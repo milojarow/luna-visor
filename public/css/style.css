@@ -199,33 +199,6 @@ body {
   flex-shrink: 0;
 }
 
-.size-toggle {
-  display: flex;
-  gap: 2px;
-  background: var(--bg);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.size-btn {
-  padding: 0.35rem 0.75rem;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 0.8rem;
-}
-
-.size-btn.active {
-  background: var(--accent);
-  color: white;
-}
-
-.size-btn:hover:not(.active) {
-  color: var(--text);
-}
-
 .toolbar-right {
   display: flex;
   gap: 0.5rem;
@@ -324,18 +297,7 @@ body {
   gap: 1rem;
   align-content: start;
   position: relative;
-}
-
-.gallery.size-normal {
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-
-.gallery.size-big {
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-}
-
-.gallery.size-bigger {
-  grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
 }
 
 .empty-state {

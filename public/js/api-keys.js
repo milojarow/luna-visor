@@ -12,7 +12,7 @@ const ApiKeys = {
         <div class="api-keys-create">
           <h4>Create New Key</h4>
           <div class="api-keys-form">
-            <input type="text" id="ak-name" placeholder="Key name (e.g. Blindando Production)">
+            <input type="text" id="ak-name" placeholder="Key name (e.g. Production Server)">
             <select id="ak-client"></select>
             <button class="btn-primary" id="ak-generate">Generate</button>
           </div>

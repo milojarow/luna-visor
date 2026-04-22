@@ -1,3 +1,5 @@
 node_modules/
 .env
 *.sqlite
+CLAUDE.md
+src/services/branding.config.js

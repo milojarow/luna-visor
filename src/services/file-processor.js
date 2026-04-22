@@ -5,8 +5,6 @@ const config = require('../config');
 
 const IMAGE_SIZES = {
   normal: 300,
-  big: 600,
-  bigger: 1200,
 };
 
 async function processImage(inputPath, uuid, ext) {
@@ -44,4 +42,33 @@ function extractThumbnail(inputPath, uuid) {
   });
 }
 
-module.exports = { processImage, extractThumbnail, IMAGE_SIZES };
+async function processImageWithPolicy(inputPath, uuid, policy) {
+  const outputDir = config.MEDIA_FILES_PATH;
+  const ext = policy.format;
+  let fullSize = 0;
+
+  for (const v of policy.variants) {
+    const suffix = v.suffix ? `-${v.suffix}` : '';
+    const outputPath = path.join(outputDir, `${uuid}${suffix}.${ext}`);
+
+    const resizeOpts = { withoutEnlargement: true };
+    const resizeConfig = v.fit === 'cover'
+      ? { fit: 'cover', position: 'centre', ...resizeOpts }
+      : { fit: 'inside', ...resizeOpts };
+
+    let pipeline = sharp(inputPath)
+      .rotate()
+      .resize(v.width, v.height, resizeConfig);
+
+    if (ext === 'webp') {
+      pipeline = pipeline.webp({ quality: v.quality, effort: v.effort });
+    }
+
+    const info = await pipeline.toFile(outputPath);
+    if (!v.suffix) fullSize = info.size;
+  }
+
+  return { extension: ext, mimeType: `image/${ext}`, size: fullSize };
+}
+
+module.exports = { processImage, processImageWithPolicy, extractThumbnail, IMAGE_SIZES };
