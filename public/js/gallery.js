@@ -1,24 +1,11 @@
 const Gallery = {
   el: null,
   files: [],
-  currentSize: 'normal',
   cdnBase: '',
 
   init(cdnBase) {
     this.el = document.getElementById('gallery');
     this.cdnBase = cdnBase;
-    this.el.classList.add('size-normal');
-  },
-
-  setSize(size) {
-    this.currentSize = size;
-    this.el.classList.remove('size-normal', 'size-big', 'size-bigger');
-    this.el.classList.add(`size-${size}`);
-    this.el.querySelectorAll('.file-card-preview[data-type="image"]').forEach((img) => {
-      const fileId = img.dataset.fileId;
-      const ext = img.dataset.ext;
-      img.src = `${this.cdnBase}/${fileId}-${size}.${ext}`;
-    });
   },
 
   render(files) {
@@ -64,12 +51,13 @@ const Gallery = {
     previewContainer.className = 'file-card-preview-container';
 
     if (file.type === 'image' && file.has_resized) {
+      const previewSuffix = file.extension === 'webp' ? '-thumb' : '-normal';
       const img = document.createElement('img');
       img.className = 'file-card-preview';
       img.dataset.type = 'image';
       img.dataset.fileId = file.id;
       img.dataset.ext = file.extension;
-      img.src = `${this.cdnBase}/${file.id}-${this.currentSize}.${file.extension}`;
+      img.src = `${this.cdnBase}/${file.id}${previewSuffix}.${file.extension}`;
       img.alt = file.original_name;
       img.loading = 'lazy';
       previewContainer.appendChild(img);

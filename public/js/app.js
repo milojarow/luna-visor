@@ -4,27 +4,14 @@ const App = {
   cdnBaseUrl: '',
 
   async init() {
-    // Get CDN base URL from server config
     const statusRes = await fetch('/api/auth/status');
     if (!statusRes.ok) return;
-
-    this.cdnBaseUrl = document.body.dataset.cdnBase || '';
-    // Fetch CDN base from a meta or deduce from files
-    // We'll set it when we get the first file response
-    this.cdnBaseUrl = ''; // Will be set from file responses
+    const status = await statusRes.json();
+    this.cdnBaseUrl = (status.cdn_base_url || '').replace(/\/$/, '');
 
     ContextMenu.init();
     Sort.init();
     Upload.init();
-
-    // Size toggle
-    document.querySelectorAll('.size-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.size-btn').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        Gallery.setSize(btn.dataset.size);
-      });
-    });
 
     // All files button
     document.getElementById('btn-all-files').addEventListener('click', () => {
@@ -47,27 +34,9 @@ const App = {
     });
 
     await this.loadClients();
-    await this.loadCdnBase();
     Gallery.init(this.cdnBaseUrl);
     Selection.init();
     await this.loadFiles();
-  },
-
-  async loadCdnBase() {
-    // Fetch any file to get cdn_url base, or use a config endpoint
-    // For simplicity, we'll hardcode from the server
-    try {
-      const files = await API.getFiles();
-      if (files.length > 0 && files[0].cdn_url) {
-        const url = new URL(files[0].cdn_url);
-        this.cdnBaseUrl = `${url.protocol}//${url.host}`;
-      } else {
-        // Default fallback
-        this.cdnBaseUrl = 'https://cdn.solutions45.com';
-      }
-    } catch {
-      this.cdnBaseUrl = 'https://cdn.solutions45.com';
-    }
   },
 
   async loadClients() {

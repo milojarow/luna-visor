@@ -5,7 +5,10 @@ const config = require('../config');
 const router = Router();
 
 router.get('/status', (req, res) => {
-  res.json({ authenticated: !!(req.session && req.session.authenticated) });
+  res.json({
+    authenticated: !!(req.session && req.session.authenticated),
+    cdn_base_url: config.CDN_BASE_URL,
+  });
 });
 
 router.post('/login', async (req, res) => {

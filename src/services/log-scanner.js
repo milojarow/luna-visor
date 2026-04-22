@@ -4,7 +4,14 @@ const config = require('../config');
 const db = require('../db/connection');
 
 const OFFSET_FILE = path.join(config.MEDIA_DB_PATH, 'log-scanner-offset.txt');
-const SELF_HOSTS = ['luna.solutions45.com', 'cdn.solutions45.com'];
+
+function hostFromUrl(url) {
+  try { return new URL(url).host; } catch { return null; }
+}
+
+const SELF_HOSTS = [config.CDN_BASE_URL, config.LUNA_BASE_URL]
+  .map(hostFromUrl)
+  .filter(Boolean);
 
 // UUID v4 pattern
 const UUID_RE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/;
@@ -25,7 +32,7 @@ function extractUuid(uri) {
   // URI looks like /uuid.ext or /uuid-normal.ext or /uuid-thumb.jpg
   const basename = path.basename(uri).split('.')[0]; // strip extension
   // Remove size suffixes
-  const cleaned = basename.replace(/-(normal|big|bigger|thumb)$/, '');
+  const cleaned = basename.replace(/-(normal|md|thumb)$/, '');
   const match = cleaned.match(UUID_RE);
   return match ? match[1] : null;
 }

@@ -1,14 +1,14 @@
 {
   "name": "luna-visor",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Self-hosted CDN manager with a web UI — upload, organize, and serve media files by UUID. Multi-tenant via API keys, per-client storage policies, optional branded cover generation.",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["cdn", "media", "self-hosted", "sharp", "webp", "express", "sqlite"],
+  "author": "Milo Jarow",
+  "license": "AGPL-3.0-only",
   "type": "commonjs",
   "dependencies": {
     "bcrypt": "^6.0.0",
