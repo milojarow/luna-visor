@@ -7,8 +7,8 @@ Built for people who want to host their own CDN backing store without Cloudflare
 ## Features
 
 - **Upload and organize media** by client (logical namespaces, not directories). Drag-and-drop or paste from clipboard in the web UI, or `POST` multipart from your own apps with API keys.
-- **Served by UUID** — URLs like `https://cdn.example.com/{uuid}.jpg`. Original filenames never leak. A preview variant is auto-generated for gallery thumbnails.
-- **Per-client storage policies** (opt-in). Configure automatic WebP conversion + multi-resolution variants (thumb / md / full) for specific clients. Typical saving on iPhone uploads: ~90% storage per photo.
+- **Served by UUID** — URLs like `https://cdn.example.com/{uuid}.webp`. Original filenames never leak. A preview variant is auto-generated for gallery thumbnails.
+- **Standard re-encoding on ingest**: every uploaded image lands as WebP and every video as MP4 (H.264/AAC), regardless of input format. Per-client `storagePolicy` overrides let you tune variants and quality for specific tenants.
 - **Cover generator** (opt-in). Composite your brand (logo, wordmark, colors, watermark) over uploaded photos at Instagram Story / Post / Square dimensions. Optional overlay endpoint returns transparent PNGs for video compositing.
 - **Two auth methods**: session (single admin password) for the web UI; API keys scoped to a single client for server-to-server uploads from your own apps.
 - **Log scanner** (optional). Tails your reverse proxy's JSON access log and marks files as "referenced" when hit by external referers, so you can spot orphans.
@@ -153,12 +153,41 @@ Body accepts `operation`, `location`, `bedrooms`, `bathrooms`, `area`, and `amen
 
 API key header: `X-API-Key: <raw-key>`. Keys are tied to a single `client_id` — they can upload to, replace, delete, and generate covers from files of that client only.
 
-## Branding and storage policies
+## Storage standard
+
+Every image upload is re-encoded to WebP and every video to MP4 (H.264 / AAC). This is the default for every client and applies regardless of input format:
+
+| Input | Stored as | Notes |
+|---|---|---|
+| jpg, png, heic, heif, avif, webp | `.webp` | Re-encoded via `sharp`, EXIF auto-rotated |
+| gif | `.webp` (animated) | Frames preserved with `animated: true` |
+| mp4 | `.mp4` | Passthrough — no re-encoding |
+| mov, webm, mkv | `.mp4` | Re-encoded with `ffmpeg` to H.264/AAC + faststart |
+| anything else | as-is | Bytes copied verbatim |
+
+The default image policy lives in `src/services/branding.js` as `DEFAULT_IMAGE_POLICY`: a 2048-on-the-longest-side full variant plus a 300px `-thumb` preview, both WebP at quality 82/78 with effort 6/4. Edit the constant if you want a different default for every client.
+
+Cover generator output is also WebP. Video thumbnails stay JPEG (a single frame extracted at 1s by `ffmpeg`).
+
+## Branding and per-client overrides
 
 `src/services/branding.js` loads an optional `src/services/branding.config.js` (gitignored) keyed by `client_id`. Copy [`branding.config.example.js`](src/services/branding.config.example.js) and fill in entries for your clients:
 
 - **Cover generator config**: `logoIcon`, `logoWordmark`, `watermarkIcon`, `watermarkText`, `colors`, `formats`
-- **Storage policy** (optional): a `storagePolicy` block with `format` (`'webp'`) and a `variants` array. Each variant specifies `suffix`, `width`, `height`, `fit` (`'inside'` or `'cover'`), `quality`, and `effort`. When present, uploads to that client are re-encoded on ingest — the original is replaced by the variants. When absent, the upload is stored as-is and a small `-normal` preview is generated for the gallery.
+- **`storagePolicy` override** (optional): replaces the default image policy for a single client. Same shape as `DEFAULT_IMAGE_POLICY`:
+
+  ```js
+  storagePolicy: {
+    format: 'webp',
+    variants: [
+      { suffix: null,    width: 2048, height: 2048, fit: 'inside', quality: 82, effort: 6 },
+      { suffix: 'md',    width: 800,  height: 800,  fit: 'inside', quality: 78, effort: 4 },
+      { suffix: 'thumb', width: 300,  height: 300,  fit: 'cover',  quality: 75, effort: 2 },
+    ],
+  }
+  ```
+
+  `suffix: null` is the primary file (`{uuid}.webp`). Other suffixes generate sibling files (`{uuid}-md.webp`, etc). `fit: 'cover'` crops to fill; `'inside'` letterboxes within the box. `quality` is 1–100, `effort` is 0–6 (higher = slower encode, smaller file).
 
 To get a client's id after creating them in the WUI: `sqlite3 /srv/media/db/luna-visor.sqlite "SELECT id, name FROM clients"`.
 
@@ -167,12 +196,15 @@ To get a client's id after creating them in the WUI: `sqlite3 /srv/media/db/luna
 All files live flat in `MEDIA_PATH/files/`, named by UUID:
 
 ```
-{uuid}.{ext}           — original (or the "full" variant under a WebP policy)
-{uuid}-normal.{ext}    — 300px preview (legacy clients, used by the WUI gallery)
-{uuid}-md.webp         — medium variant (WebP policy clients)
-{uuid}-thumb.webp      — thumbnail (WebP policy clients)
+{uuid}.webp            — full image (default policy: 2048×2048 inside)
+{uuid}-thumb.webp      — 300px preview used by the WUI gallery
+{uuid}.mp4             — video (re-encoded if input was non-mp4)
 {uuid}-thumb.jpg       — video thumbnail (ffmpeg frame at 1s)
+{uuid}-md.webp         — medium variant (only with custom policy that defines it)
+{uuid}-normal.{ext}    — 300px preview for legacy jpg/png files (pre-WebP standard)
 ```
+
+Files uploaded before the WebP/MP4 standard was rolled out keep their original extensions (`.jpg`, `.png`, etc.) and their preview is named `-normal.{ext}` (the old default suffix); their `cdn_url`s remain valid forever — there is no migration. New uploads, replacements, and generated covers follow the WebP/MP4 standard with `-thumb.webp` previews.
 
 Client organization is logical — rows in the SQLite `clients` table. `mkdir` on disk does nothing.
 

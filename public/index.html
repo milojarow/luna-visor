@@ -11,6 +11,10 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-header">
+        <svg class="app-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="28" fill="#e94560"/>
+          <circle cx="42" cy="26" r="22" fill="#1a1a2e"/>
+        </svg>
         <h2>Luna Visor</h2>
       </div>
       <button id="btn-all-files" class="sidebar-item active">All Files</button>
@@ -23,13 +27,21 @@
         <div class="toolbar-left">
           <h3 id="current-view-title">All Files</h3>
         </div>
-        <div class="toolbar-center">
+        <div class="toolbar-center toolbar-gallery">
           <div class="sort-controls">
             <button class="sort-btn active" data-sort="created_at">Date <span class="sort-arrow">&darr;</span></button>
             <button class="sort-btn" data-sort="original_name">Name <span class="sort-arrow"></span></button>
             <button class="sort-btn" data-sort="type">Type <span class="sort-arrow"></span></button>
           </div>
           <button class="group-btn" id="btn-group-date">Group</button>
+        </div>
+        <div class="toolbar-center toolbar-api-keys" hidden>
+          <label class="api-keys-filter-label">
+            Filter:
+            <select id="api-keys-filter" class="api-keys-filter-select">
+              <option value="">All clients</option>
+            </select>
+          </label>
         </div>
         <div class="toolbar-right">
           <button id="btn-api-keys" class="btn-secondary">API Keys</button>
@@ -40,6 +52,12 @@
 
       <div id="gallery" class="gallery">
         <p class="empty-state">Select a client or upload files to get started.</p>
+      </div>
+
+      <div id="api-keys-view" class="api-keys-view" hidden>
+        <div id="api-keys-banner" class="api-keys-banner" hidden></div>
+        <div id="api-keys-list" class="api-keys-list"></div>
+        <button id="btn-new-api-key" class="btn-fab" title="New API Key" aria-label="New API Key">+</button>
       </div>
 
       <div id="upload-zone" class="upload-zone" hidden>

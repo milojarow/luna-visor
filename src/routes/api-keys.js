@@ -46,6 +46,17 @@ router.post('/', (req, res) => {
   });
 });
 
+router.patch('/:id', (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'name required' });
+  }
+  const result = db.prepare('UPDATE api_keys SET name = ? WHERE id = ?')
+    .run(name.trim(), req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'API key not found' });
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   const result = db.prepare('DELETE FROM api_keys WHERE id = ?').run(req.params.id);
   if (result.changes === 0) {

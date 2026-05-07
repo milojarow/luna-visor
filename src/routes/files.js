@@ -119,10 +119,10 @@ async function handleCoverGeneration(req, res, format, width, height) {
   const sourceBuffer = fs.readFileSync(sourcePath);
   const coverBuffer = await generateCover({ sourceBuffer, data: req.body, width, height, clientId: file.client_id });
 
-  const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.jpg`);
+  const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.webp`);
   fs.writeFileSync(tmpPath, coverBuffer);
-  const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.jpg`;
-  const saved = await saveFile(tmpPath, coverName, 'image/jpeg', coverBuffer.length, file.client_id);
+  const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
+  const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id);
 
   const response = fileToResponse(saved);
   if (req.authMethod === 'api-key') {

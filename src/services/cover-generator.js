@@ -218,7 +218,7 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
   return sharp(sourceBuffer)
     .resize(width, height, { fit: "cover", position: "centre" })
     .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-    .jpeg({ quality: 95 })
+    .webp({ quality: 90, effort: 6 })
     .toBuffer();
 }
 

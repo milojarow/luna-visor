@@ -4,6 +4,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --bg: #1a1a2e;
   --bg-surface: #16213e;
@@ -41,6 +45,12 @@ body {
   text-align: center;
   min-width: 320px;
   border: 1px solid var(--border);
+}
+
+.login-container .login-icon {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 0.75rem;
 }
 
 .login-container h1 {
@@ -106,11 +116,24 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  align-self: flex-start;
 }
 
 .sidebar-header {
   padding: 1.25rem;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sidebar-header .app-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .sidebar-header h2 {
@@ -145,6 +168,12 @@ body {
   color: var(--text-muted);
   font-size: 0.8rem;
   font-weight: normal;
+}
+
+#client-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-add {
@@ -337,9 +366,29 @@ body {
 
 .file-card-name {
   font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.file-card-name-text {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-card-ext {
+  flex-shrink: 0;
+  padding: 0.05rem 0.35rem;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-family: ui-monospace, 'SF Mono', monospace;
 }
 
 .file-card-meta {
@@ -573,126 +622,216 @@ body {
   margin-bottom: 0.25rem;
 }
 
-/* API Keys modal */
-.api-keys-modal {
-  min-width: 480px;
-  max-width: 600px;
+/* API Keys page */
+.api-keys-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
 }
 
-.api-keys-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
+.api-keys-banner {
+  background: var(--bg-surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
 }
 
-.api-keys-header h3 {
-  margin-bottom: 0;
+.api-keys-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .api-keys-empty {
   color: var(--text-muted);
-  font-size: 0.85rem;
-  padding: 0.75rem 0;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2.5rem 1rem;
 }
 
 .api-key-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.6rem 0.75rem;
-  background: var(--bg);
-  border-radius: 6px;
-  margin-bottom: 0.4rem;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+  background: var(--bg-surface);
+  transition: background 0.15s;
+}
+
+.api-key-row:nth-child(even) {
+  background: var(--card-bg);
+}
+
+.api-key-row:last-child {
+  border-bottom: none;
+}
+
+.api-key-row:hover {
+  background: var(--bg-elevated);
 }
 
 .api-key-info {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .api-key-name {
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
-.api-key-meta {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.api-key-name-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.btn-icon-danger {
+.btn-icon-edit {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 1rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.2rem 0.35rem;
   border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.btn-icon-edit:hover {
+  opacity: 1;
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.api-key-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.api-key-meta-sep {
+  opacity: 0.5;
+}
+
+.api-key-client {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.api-key-preview {
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+
+.btn-icon-danger {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 
 .btn-icon-danger:hover {
   color: var(--accent);
   background: rgba(233, 69, 96, 0.1);
+  border-color: rgba(233, 69, 96, 0.3);
 }
 
-.api-keys-create {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
+/* Toolbar — filter en api-keys view */
+.toolbar-api-keys {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.api-keys-create h4 {
+.api-keys-filter-label {
   font-size: 0.85rem;
   color: var(--text-muted);
-  margin-bottom: 0.6rem;
-  font-weight: 600;
-}
-
-.api-keys-form {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
-.api-keys-form input,
-.api-keys-form select {
-  flex: 1;
-  padding: 0.5rem 0.7rem;
+.api-keys-filter-select {
+  padding: 0.4rem 0.75rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
   font-size: 0.85rem;
+  cursor: pointer;
 }
 
-.api-keys-form input:focus,
-.api-keys-form select:focus {
+.api-keys-filter-select:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.api-keys-form select {
-  flex: 0.7;
+/* Floating action button (new API key) */
+.btn-fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  border: none;
+  font-size: 2rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  transition: transform 0.15s ease, background 0.15s, box-shadow 0.15s;
 }
 
-.api-keys-form .btn-primary {
-  flex-shrink: 0;
+.btn-fab:hover {
+  transform: scale(1.06);
+  background: var(--accent-hover);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
-.api-key-reveal {
-  margin-top: 1rem;
-  padding: 1rem;
-  background: var(--bg);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
+.btn-fab:active {
+  transform: scale(0.98);
 }
 
+/* Active state del btn-api-keys cuando estás en la page */
+#btn-api-keys.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Reveal banner (nueva key recién creada) */
 .api-key-warning {
   color: var(--accent);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.75rem;
 }
 
 .api-key-reveal-row {
@@ -702,17 +841,41 @@ body {
 
 .api-key-reveal-row input {
   flex: 1;
-  padding: 0.5rem 0.7rem;
-  background: var(--bg-surface);
+  padding: 0.55rem 0.8rem;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 0.8rem;
-  font-family: monospace;
+  font-size: 0.85rem;
+  font-family: ui-monospace, 'SF Mono', monospace;
 }
 
 .api-key-reveal-row .btn-secondary {
   flex-shrink: 0;
+}
+
+/* Mini-modal de create */
+.api-keys-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.api-keys-create-form input,
+.api-keys-create-form select {
+  padding: 0.6rem 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.api-keys-create-form input:focus,
+.api-keys-create-form select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Referenced files indicator */

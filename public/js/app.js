@@ -1,6 +1,7 @@
 const App = {
   clients: [],
   currentClientId: null,
+  currentView: 'gallery',
   cdnBaseUrl: '',
 
   async init() {
@@ -12,9 +13,11 @@ const App = {
     ContextMenu.init();
     Sort.init();
     Upload.init();
+    ApiKeysPage.init();
 
     // All files button
     document.getElementById('btn-all-files').addEventListener('click', () => {
+      this.showGalleryView();
       this.currentClientId = null;
       this.setActiveClient(null);
       document.getElementById('current-view-title').textContent = 'All Files';
@@ -25,7 +28,7 @@ const App = {
     document.getElementById('btn-add-client').addEventListener('click', () => this.promptNewClient());
 
     // API Keys
-    document.getElementById('btn-api-keys').addEventListener('click', () => ApiKeys.show());
+    document.getElementById('btn-api-keys').addEventListener('click', () => this.showApiKeysPage());
 
     // Logout
     document.getElementById('btn-logout').addEventListener('click', async () => {
@@ -49,6 +52,7 @@ const App = {
       if (this.currentClientId === client.id) btn.classList.add('active');
       btn.innerHTML = `${client.name} <span class="file-count">${client.file_count}</span>`;
       btn.addEventListener('click', () => {
+        this.showGalleryView();
         this.currentClientId = client.id;
         this.setActiveClient(client.id);
         document.getElementById('current-view-title').textContent = client.name;
@@ -77,6 +81,20 @@ const App = {
       const idx = this.clients.findIndex((c) => c.id === clientId);
       if (idx >= 0 && items[idx]) items[idx].classList.add('active');
     }
+  },
+
+  showApiKeysPage() {
+    this.currentView = 'api-keys';
+    document.querySelectorAll('.sidebar-item').forEach((el) => el.classList.remove('active'));
+    document.getElementById('btn-api-keys').classList.add('active');
+    ApiKeysPage.show();
+  },
+
+  showGalleryView() {
+    if (this.currentView === 'gallery') return;
+    this.currentView = 'gallery';
+    document.getElementById('btn-api-keys').classList.remove('active');
+    ApiKeysPage.hide();
   },
 
   async loadFiles() {

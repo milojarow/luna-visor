@@ -89,8 +89,13 @@ const Gallery = {
     const info = document.createElement('div');
     info.className = 'file-card-info';
     if (file.referenced) info.classList.add('file-card-info-referenced');
+    const displayName = file.original_name.replace(/\.[^.]+$/, '');
+    const extBadge = file.extension ? `<span class="file-card-ext">${file.extension}</span>` : '';
     info.innerHTML = `
-      <div class="file-card-name" title="${file.original_name}">${file.original_name}</div>
+      <div class="file-card-name" title="${file.original_name}">
+        <span class="file-card-name-text">${displayName}</span>
+        ${extBadge}
+      </div>
       <div class="file-card-meta">${formatSize(file.size_bytes)} &middot; ${formatDate(file.created_at)}</div>
     `;
     card.appendChild(info);
