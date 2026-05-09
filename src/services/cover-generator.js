@@ -4,6 +4,12 @@ const { getBranding } = require('./branding');
 const DEFAULT_WIDTH = 1080;
 const DEFAULT_HEIGHT = 1920;
 
+const XML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
+function escapeXml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => XML_ESCAPES[c]);
+}
+
 // ── SVG Icons ──
 
 const iconBed = `
@@ -78,11 +84,11 @@ function pill(icon, value, label) {
       let textX = padL + iconW + gap;
       let parts = "";
       if (value) {
-        parts += `<text x="${textX}" y="33" font-family="'Inter', sans-serif" font-size="22" fill="white" font-weight="600">${value}</text>`;
+        parts += `<text x="${textX}" y="33" font-family="'Inter', sans-serif" font-size="22" fill="white" font-weight="600">${escapeXml(value)}</text>`;
         textX += valueW + 4;
       }
       if (label) {
-        parts += `<text x="${textX}" y="33" font-family="'Inter', sans-serif" font-size="14" fill="rgba(255,255,255,0.55)" font-weight="400">${label}</text>`;
+        parts += `<text x="${textX}" y="33" font-family="'Inter', sans-serif" font-size="14" fill="rgba(255,255,255,0.55)" font-weight="400">${escapeXml(label)}</text>`;
       }
       return `
         <g transform="translate(${x}, 0)">
@@ -189,7 +195,7 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
     <rect width="${width}" height="220" fill="url(#topgrad)" />
 
     <rect x="40" y="36" width="170" height="46" rx="23" fill="${brand.colors.accent}" />
-    <text x="125" y="66" font-family="'Inter', sans-serif" font-size="21" font-weight="600" fill="white" text-anchor="middle">En ${data.operation?.includes("Renta") ? "Renta" : "Venta"}</text>
+    <text x="125" y="66" font-family="'Inter', sans-serif" font-size="21" font-weight="600" fill="white" text-anchor="middle">En ${String(data.operation || '').includes("Renta") ? "Renta" : "Venta"}</text>
 
     <g transform="translate(${width - 280}, 30)">
       <svg viewBox="0 0 48 48" width="40" height="40">${brand.logoIcon}</svg>
@@ -198,7 +204,7 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
       </g>
     </g>
 
-    <text x="56" y="${height - bottomOffset - 60}" font-family="'Inter', sans-serif" font-size="52" font-weight="300" fill="white" letter-spacing="0.5">${data.operation}</text>
+    <text x="56" y="${height - bottomOffset - 60}" font-family="'Inter', sans-serif" font-size="52" font-weight="300" fill="white" letter-spacing="0.5">${escapeXml(data.operation)}</text>
     <rect x="56" y="${height - bottomOffset - 38}" width="140" height="3" rx="1.5" fill="${brand.colors.accent}" />
 
     <g transform="translate(56, ${height - bottomOffset - 5})">
@@ -206,7 +212,7 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
         <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.8"/>
         <circle cx="12" cy="9" r="2.5" fill="rgba(255,255,255,0.8)"/>
       </svg>
-      <text x="30" y="0" font-family="'Inter', sans-serif" font-size="26" fill="rgba(255,255,255,0.85)" font-weight="400">${data.location}</text>
+      <text x="30" y="0" font-family="'Inter', sans-serif" font-size="26" fill="rgba(255,255,255,0.85)" font-weight="400">${escapeXml(data.location)}</text>
     </g>
 
     <g transform="translate(40, ${height - 80})">
@@ -215,7 +221,8 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
   </svg>
   `;
 
-  return sharp(sourceBuffer)
+  return sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 50_000_000, sequentialRead: true })
+    .timeout({ seconds: 30 })
     .resize(width, height, { fit: "cover", position: "centre" })
     .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
     .webp({ quality: 90, effort: 6 })
@@ -239,11 +246,11 @@ function bigPill(icon, value, label) {
       let textX = padL + iconW + gap;
       let parts = "";
       if (value) {
-        parts += `<text x="${textX}" y="66" font-family="'Inter', sans-serif" font-size="44" fill="white" font-weight="600">${value}</text>`;
+        parts += `<text x="${textX}" y="66" font-family="'Inter', sans-serif" font-size="44" fill="white" font-weight="600">${escapeXml(value)}</text>`;
         textX += valueW + 8;
       }
       if (label) {
-        parts += `<text x="${textX}" y="66" font-family="'Inter', sans-serif" font-size="28" fill="rgba(255,255,255,0.55)" font-weight="400">${label}</text>`;
+        parts += `<text x="${textX}" y="66" font-family="'Inter', sans-serif" font-size="28" fill="rgba(255,255,255,0.55)" font-weight="400">${escapeXml(label)}</text>`;
       }
       return `
         <g transform="translate(${x}, 0)">
@@ -290,7 +297,7 @@ function buildOverlaySvg({ data, width, height, brand }) {
     <rect width="${width}" height="220" fill="url(#topgrad)" />
 
     <rect x="40" y="36" width="340" height="92" rx="46" fill="${brand.colors.accent}" />
-    <text x="210" y="96" font-family="'Inter', sans-serif" font-size="42" font-weight="600" fill="white" text-anchor="middle">En ${data.operation?.includes("Renta") ? "Renta" : "Venta"}</text>
+    <text x="210" y="96" font-family="'Inter', sans-serif" font-size="42" font-weight="600" fill="white" text-anchor="middle">En ${String(data.operation || '').includes("Renta") ? "Renta" : "Venta"}</text>
 
     <g transform="translate(${width - 520}, 30)">
       <svg viewBox="0 0 48 48" width="80" height="80">${brand.logoIcon}</svg>
@@ -299,7 +306,7 @@ function buildOverlaySvg({ data, width, height, brand }) {
       </g>
     </g>
 
-    <text x="56" y="${height - bottomOffset - 120}" font-family="'Inter', sans-serif" font-size="104" font-weight="300" fill="white" letter-spacing="0.5">${data.operation}</text>
+    <text x="56" y="${height - bottomOffset - 120}" font-family="'Inter', sans-serif" font-size="104" font-weight="300" fill="white" letter-spacing="0.5">${escapeXml(data.operation)}</text>
     <rect x="56" y="${height - bottomOffset - 76}" width="280" height="6" rx="3" fill="${brand.colors.accent}" />
 
     <g transform="translate(56, ${height - bottomOffset - 10})">
@@ -307,7 +314,7 @@ function buildOverlaySvg({ data, width, height, brand }) {
         <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.8"/>
         <circle cx="12" cy="9" r="2.5" fill="rgba(255,255,255,0.8)"/>
       </svg>
-      <text x="55" y="0" font-family="'Inter', sans-serif" font-size="52" fill="rgba(255,255,255,0.85)" font-weight="400">${data.location}</text>
+      <text x="55" y="0" font-family="'Inter', sans-serif" font-size="52" fill="rgba(255,255,255,0.85)" font-weight="400">${escapeXml(data.location)}</text>
     </g>
 
     <g transform="translate(40, ${height - 130})">

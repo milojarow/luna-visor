@@ -8,12 +8,16 @@ const { getImagePolicy } = require('./branding');
 
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'mkv']);
+const AUDIO_EXTS = new Set(['mp3']);
+const VECTOR_EXTS = new Set(['svg']);
 const RE_ENCODED_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
 
 function getFileType(ext) {
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
-  return 'other';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (VECTOR_EXTS.has(ext)) return 'vector';
+  return null;
 }
 
 function stripReEncodedExtension(originalName) {
@@ -57,11 +61,19 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
     } catch (err) {
       console.error(`Thumbnail extraction failed for ${uuid}:`, err.message);
     }
-  } else {
+  } else if (type === 'audio') {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
     fs.copyFileSync(tempPath, destPath);
-    finalMimeType = 'application/octet-stream';
+    finalMimeType = 'audio/mpeg';
     finalSize = fs.statSync(destPath).size;
+  } else if (type === 'vector') {
+    const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.svg`);
+    fs.copyFileSync(tempPath, destPath);
+    finalExt = 'svg';
+    finalMimeType = 'image/svg+xml';
+    finalSize = fs.statSync(destPath).size;
+  } else {
+    throw new Error(`Unexpected file type after validation: ${type}`);
   }
 
   return { finalExt, finalMimeType, finalSize, hasResized, hasThumbnail };
@@ -69,8 +81,12 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
 
 async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId) {
   const ext = path.extname(originalName).slice(1).toLowerCase();
-  const uuid = uuidv4();
   const type = getFileType(ext);
+  if (!type) {
+    try { fs.unlinkSync(tempPath); } catch {}
+    throw new Error(`File extension ".${ext}" not allowed`);
+  }
+  const uuid = uuidv4();
 
   let processed;
   try {
@@ -79,7 +95,6 @@ async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId) {
     try { fs.unlinkSync(tempPath); } catch {}
   }
 
-  // Default mime stays as the client-supplied one for "other" types if we have it
   const mime = processed.finalMimeType || mimeType;
 
   db.prepare(`
@@ -153,6 +168,10 @@ async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) 
 
   const ext = path.extname(originalName).slice(1).toLowerCase();
   const type = getFileType(ext);
+  if (!type) {
+    try { fs.unlinkSync(tempPath); } catch {}
+    throw new Error(`File extension ".${ext}" not allowed`);
+  }
 
   let processed;
   try {

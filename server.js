@@ -1,6 +1,7 @@
 const express = require('express');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const config = require('./src/config');
 
@@ -35,6 +36,17 @@ const { requireAuth, requireSession } = require('./src/middleware/auth');
 app.use('/login.html', express.static(path.join(__dirname, 'public', 'login.html')));
 app.use('/css', express.static(path.join(__dirname, 'public', 'css')));
 app.use('/js', express.static(path.join(__dirname, 'public', 'js')));
+
+// Rate-limit login attempts (per IP) to slow down brute force
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, try again later.' },
+});
+app.use('/api/auth/login', loginLimiter);
 
 // Auth routes (before auth middleware)
 app.use('/api/auth', require('./src/routes/auth'));

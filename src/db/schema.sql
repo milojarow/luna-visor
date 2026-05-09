@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS files (
     mime_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id),
-    type TEXT NOT NULL CHECK(type IN ('image', 'video', 'other')),
+    type TEXT NOT NULL CHECK(type IN ('image', 'video', 'audio', 'vector')),
     has_thumbnail INTEGER DEFAULT 0,
     has_resized INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),

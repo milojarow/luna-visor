@@ -1,9 +1,19 @@
 const { Router } = require('express');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { generateOverlay } = require('../services/cover-generator');
 
 const router = Router();
 
-router.post('/generate', async (req, res) => {
+const overlayLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: req => req.apiKeyClientId ? `overlay-key:${req.apiKeyClientId}` : `overlay-ip:${ipKeyGenerator(req.ip)}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many overlay generations, slow down.' },
+});
+
+router.post('/generate', overlayLimiter, async (req, res) => {
   const { width = 1080, height = 1920 } = req.body;
   const clientId = req.apiKeyClientId || req.body.client_id;
 

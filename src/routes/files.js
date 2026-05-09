@@ -2,16 +2,45 @@ const { Router } = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
 const { generateCover, getBranding } = require('../services/cover-generator');
 const { requireSession } = require('../middleware/auth');
+const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
 const upload = multer({
   dest: '/tmp/luna-visor-uploads/',
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024, files: 20 },
 });
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: req => req.apiKeyClientId ? `key:${req.apiKeyClientId}` : `ip:${ipKeyGenerator(req.ip)}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many uploads, slow down.' },
+});
+
+const coverLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: req => req.apiKeyClientId ? `cover-key:${req.apiKeyClientId}` : `cover-ip:${ipKeyGenerator(req.ip)}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many cover generations, slow down.' },
+});
+
+function cleanupTempFiles(req) {
+  const files = (req.files || []).concat(req.file ? [req.file] : []);
+  for (const f of files) {
+    if (f && f.path) {
+      try { fs.unlinkSync(f.path); } catch {}
+    }
+  }
+}
 
 const router = Router();
 
@@ -38,26 +67,33 @@ router.get('/:id', requireSession, (req, res) => {
   res.json(fileToResponse(file));
 });
 
-router.post('/upload', upload.array('files', 20), async (req, res) => {
+router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res) => {
   const isApiKey = req.authMethod === 'api-key';
   const client_id = isApiKey ? req.apiKeyClientId : req.body.client_id;
 
   if (!client_id) {
+    cleanupTempFiles(req);
     return res.status(400).json({ error: 'client_id required' });
   }
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(client_id);
   if (!client) {
+    cleanupTempFiles(req);
     return res.status(404).json({ error: 'Client not found' });
   }
 
   const results = [];
   for (const f of req.files) {
     try {
-      const file = await saveFile(f.path, f.originalname, f.mimetype, f.size, client_id);
+      await validateUpload(f.path, f.originalname);
+      const cleanName = sanitizeOriginalName(f.originalname);
+      const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id);
       results.push(fileToResponse(file));
     } catch (err) {
-      console.error(`Failed to process ${f.originalname}:`, err);
+      try { fs.unlinkSync(f.path); } catch {}
+      if (!(err instanceof ValidationError)) {
+        console.error(`Failed to process ${f.originalname}:`, err);
+      }
       results.push({ error: err.message, original_name: f.originalname });
     }
   }
@@ -79,25 +115,39 @@ router.patch('/:id', requireSession, (req, res) => {
   res.json(fileToResponse(file));
 });
 
-router.post('/:id/replace', upload.single('file'), async (req, res) => {
-  // API key: verify file belongs to the key's client
+router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, res) => {
   if (req.authMethod === 'api-key') {
     const existing = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
-    if (!existing) return res.status(404).json({ error: 'File not found' });
+    if (!existing) {
+      cleanupTempFiles(req);
+      return res.status(404).json({ error: 'File not found' });
+    }
     if (existing.client_id !== req.apiKeyClientId) {
+      cleanupTempFiles(req);
       return res.status(403).json({ error: 'Access denied' });
     }
   }
   if (!req.file) {
     return res.status(400).json({ error: 'File required' });
   }
-  const file = await replaceFile(req.params.id, req.file.path, req.file.originalname, req.file.mimetype, req.file.size);
-  if (!file) return res.status(404).json({ error: 'File not found' });
-  const response = fileToResponse(file);
-  if (req.authMethod === 'api-key') {
-    return res.json({ cdn_url: response.cdn_url });
+  try {
+    await validateUpload(req.file.path, req.file.originalname);
+    const cleanName = sanitizeOriginalName(req.file.originalname);
+    const file = await replaceFile(req.params.id, req.file.path, cleanName, req.file.mimetype, req.file.size);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    const response = fileToResponse(file);
+    if (req.authMethod === 'api-key') {
+      return res.json({ cdn_url: response.cdn_url });
+    }
+    res.json(response);
+  } catch (err) {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    if (err instanceof ValidationError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    console.error('Replace failed:', err);
+    return res.status(500).json({ error: 'Internal error during replace' });
   }
-  res.json(response);
 });
 
 async function handleCoverGeneration(req, res, format, width, height) {
@@ -131,10 +181,10 @@ async function handleCoverGeneration(req, res, format, width, height) {
   res.status(201).json(response);
 }
 
-router.post('/:id/story', (req, res) => handleCoverGeneration(req, res, 'story', 1080, 1920));
-router.post('/:id/cover', (req, res) => handleCoverGeneration(req, res, 'cover', 1080, 1350));
-router.post('/:id/square', (req, res) => handleCoverGeneration(req, res, 'square', 1080, 1080));
-router.post('/:id/fb', (req, res) => handleCoverGeneration(req, res, 'fb', 1080, 1080));
+router.post('/:id/story', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'story', 1080, 1920));
+router.post('/:id/cover', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'cover', 1080, 1350));
+router.post('/:id/square', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'square', 1080, 1080));
+router.post('/:id/fb', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'fb', 1080, 1080));
 
 router.delete('/:id', (req, res) => {
   // API key: verify file belongs to the key's client
