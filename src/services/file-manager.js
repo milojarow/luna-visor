@@ -158,12 +158,9 @@ async function copyFile(fileId, targetClientId) {
 
 async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) {
   const existing = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
-  if (!existing) return null;
-
-  // Clean all physical files for this UUID (original + any variant, any scheme)
-  const matches = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
-  for (const f of matches) {
-    try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
+  if (!existing) {
+    try { fs.unlinkSync(tempPath); } catch {}
+    return null;
   }
 
   const ext = path.extname(originalName).slice(1).toLowerCase();
@@ -173,11 +170,51 @@ async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) 
     throw new Error(`File extension ".${ext}" not allowed`);
   }
 
+  // Process the new file under a TEMP uuid so the original stays intact
+  // until we know the new pipeline succeeded. If processUpload throws
+  // (sharp/ffmpeg rejects the input, disk error, etc.), we can clean up
+  // the partial outputs without having destroyed the existing files.
+  const tempUuid = uuidv4();
   let processed;
   try {
-    processed = await processUpload(tempPath, ext, type, fileId, existing.client_id);
-  } finally {
+    processed = await processUpload(tempPath, ext, type, tempUuid, existing.client_id);
+  } catch (err) {
+    // Roll back any partial outputs created with tempUuid
+    try {
+      const partial = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(tempUuid));
+      for (const f of partial) {
+        try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
+      }
+    } catch {}
     try { fs.unlinkSync(tempPath); } catch {}
+    throw err;
+  }
+  // tempPath is already removed by processUpload's saveFile flow callers,
+  // but processUpload writes to MEDIA_FILES_PATH directly — clean tempPath here too.
+  try { fs.unlinkSync(tempPath); } catch {}
+
+  // Pipeline succeeded: now atomically swap. Same filesystem, so rename is fast.
+  // Remove the originals and rename temp outputs onto the original UUID.
+  const oldFiles = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
+  for (const f of oldFiles) {
+    try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
+  }
+  const tempFiles = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(tempUuid));
+  for (const f of tempFiles) {
+    const newName = f.replace(tempUuid, fileId);
+    try {
+      fs.renameSync(
+        path.join(config.MEDIA_FILES_PATH, f),
+        path.join(config.MEDIA_FILES_PATH, newName),
+      );
+    } catch (renameErr) {
+      // Filesystem rename failures on the same volume are extremely rare
+      // (permissions, disk full). We've already removed the originals, so
+      // best-effort: log and rethrow. The DB row stays consistent with the
+      // last successful state until UPDATE below — caller sees an error.
+      console.error(`Failed to rename ${f} → ${newName}:`, renameErr.message);
+      throw renameErr;
+    }
   }
 
   const mime = processed.finalMimeType || mimeType;
