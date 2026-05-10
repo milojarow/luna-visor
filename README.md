@@ -127,11 +127,11 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/).
 - `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or api keys)
 
 **Files**
-- `GET /api/files` — list (session) — optional `?client_id=`
-- `POST /api/files/upload` — multipart, field `files`, up to 20 × 500MB — session or API key
+- `GET /api/files` — list (session) — optional `?client_id=`. Each file row includes `api_key_id`, `api_key_name`, and `api_key_revoked_at` (LEFT JOINed) so you can tell which API key (or session) uploaded it. `NULL` for files uploaded before tracking was added.
+- `POST /api/files/upload` — multipart, field `files`, up to 20 × 500MB — session or API key. New files record the API key ID used to upload them.
 - `PATCH /api/files/:id` — move to another client (session)
 - `POST /api/files/:id/copy` — copy to another client (session)
-- `POST /api/files/:id/replace` — multipart, field `file` — same UUID, same cdn_url — session or API key (own client only)
+- `POST /api/files/:id/replace` — multipart, field `file` — same UUID, same cdn_url — session or API key (own client only). Replace keeps the original `api_key_id` (the "first source" of the file).
 - `DELETE /api/files/:id` — session or API key (own client only)
 - `POST /api/files/scan-references` — trigger log scan (session)
 
@@ -147,9 +147,9 @@ Body accepts `operation`, `location`, `bedrooms`, `bathrooms`, `area`, and `amen
 - `POST /api/overlay/generate` — same body as cover generation plus optional `width`/`height` (default 1080×1920). Returns `image/png` with transparency — intended for FFmpeg compositing onto videos, not saved to luna.
 
 **API keys** (session only)
-- `GET /api/api-keys` — list (with client names)
+- `GET /api/api-keys` — list (with client names and `revoked_at`). Active keys come first, revoked ones last.
 - `POST /api/api-keys` — create, returns the raw key **once**; store it immediately
-- `DELETE /api/api-keys/:id` — revoke
+- `DELETE /api/api-keys/:id` — soft delete (sets `revoked_at` instead of removing the row). The key stops authenticating immediately, but the row sticks around so files uploaded by it still resolve to its name in `GET /files`. There is no "undelete".
 
 API key header: `X-API-Key: <raw-key>`. Keys are tied to a single `client_id` — they can upload to, replace, delete, and generate covers from files of that client only.
 
