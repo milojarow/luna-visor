@@ -75,20 +75,34 @@ const ApiKeysPage = {
 
     for (const k of filtered) {
       const row = document.createElement('div');
-      row.className = 'api-key-row';
+      const revoked = !!k.revoked_at;
+      row.className = revoked ? 'api-key-row api-key-row-revoked' : 'api-key-row';
       row.dataset.id = k.id;
       const dateStr = new Date(k.created_at + 'Z').toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
       });
-      row.innerHTML = `
-        <div class="api-key-info">
-          <div class="api-key-name">
-            <span class="api-key-name-text">${escapeHtml(k.name)}</span>
+      const revokedDateStr = revoked ? new Date(k.revoked_at + 'Z').toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+      }) : '';
+      const revokedBadge = revoked
+        ? `<span class="api-key-meta-sep">·</span><span class="api-key-revoked-badge">Revoked ${revokedDateStr}</span>`
+        : '';
+      const renameBtn = revoked ? '' : `
             <button class="btn-icon-edit" title="Rename" data-action="rename">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
                 <path d="M11.5 1.5l3 3-9 9H2.5v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </button>`;
+      const deleteBtn = revoked ? '' : `
+        <button class="btn-icon-danger" title="Revoke" data-action="delete">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M3 4h10M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4v9.5a.5.5 0 00.5.5h5a.5.5 0 00.5-.5V4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>`;
+      row.innerHTML = `
+        <div class="api-key-info">
+          <div class="api-key-name">
+            <span class="api-key-name-text">${escapeHtml(k.name)}</span>${renameBtn}
           </div>
           <div class="api-key-meta">
             <span class="api-key-client">${escapeHtml(k.client_name)}</span>
@@ -96,16 +110,15 @@ const ApiKeysPage = {
             <span class="api-key-preview">…${k.key_preview}</span>
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-date">Created ${dateStr}</span>
+            ${revokedBadge}
           </div>
         </div>
-        <button class="btn-icon-danger" title="Revoke" data-action="delete">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M3 4h10M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4v9.5a.5.5 0 00.5.5h5a.5.5 0 00.5-.5V4" fill="none" stroke="currentColor" stroke-width="1.2"/>
-          </svg>
-        </button>
+        ${deleteBtn}
       `;
-      row.querySelector('[data-action="rename"]').addEventListener('click', () => this.promptRename(k));
-      row.querySelector('[data-action="delete"]').addEventListener('click', () => this.confirmDelete(k));
+      const renameEl = row.querySelector('[data-action="rename"]');
+      if (renameEl) renameEl.addEventListener('click', () => this.promptRename(k));
+      const deleteEl = row.querySelector('[data-action="delete"]');
+      if (deleteEl) deleteEl.addEventListener('click', () => this.confirmDelete(k));
       this.listEl.appendChild(row);
     }
   },

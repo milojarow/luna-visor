@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS files (
     mime_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id),
+    api_key_id INTEGER REFERENCES api_keys(id),
     type TEXT NOT NULL CHECK(type IN ('image', 'video', 'audio', 'vector')),
     has_thumbnail INTEGER DEFAULT 0,
     has_resized INTEGER DEFAULT 0,
@@ -25,5 +26,6 @@ CREATE TABLE IF NOT EXISTS api_keys (
     key_hash TEXT NOT NULL UNIQUE,
     key_preview TEXT NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id),
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    revoked_at TEXT
 );

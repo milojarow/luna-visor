@@ -6,10 +6,10 @@ const router = Router();
 
 router.get('/', (_req, res) => {
   const keys = db.prepare(`
-    SELECT ak.id, ak.name, ak.key_preview, ak.client_id, c.name as client_name, ak.created_at
+    SELECT ak.id, ak.name, ak.key_preview, ak.client_id, c.name as client_name, ak.created_at, ak.revoked_at
     FROM api_keys ak
     JOIN clients c ON c.id = ak.client_id
-    ORDER BY ak.created_at DESC
+    ORDER BY (ak.revoked_at IS NOT NULL), ak.created_at DESC
   `).all();
   res.json(keys);
 });
@@ -58,9 +58,11 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM api_keys WHERE id = ?').run(req.params.id);
+  const result = db.prepare(
+    "UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL"
+  ).run(req.params.id);
   if (result.changes === 0) {
-    return res.status(404).json({ error: 'API key not found' });
+    return res.status(404).json({ error: 'API key not found or already revoked' });
   }
   res.json({ ok: true });
 });

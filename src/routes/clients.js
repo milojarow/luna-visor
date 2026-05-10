@@ -51,9 +51,9 @@ router.patch('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const apiKeyCount = db.prepare('SELECT COUNT(*) as count FROM api_keys WHERE client_id = ?').get(req.params.id);
+  const apiKeyCount = db.prepare('SELECT COUNT(*) as count FROM api_keys WHERE client_id = ? AND revoked_at IS NULL').get(req.params.id);
   if (apiKeyCount && apiKeyCount.count > 0) {
-    return res.status(409).json({ error: `Client has ${apiKeyCount.count} API key(s). Revoke them first.` });
+    return res.status(409).json({ error: `Client has ${apiKeyCount.count} active API key(s). Revoke them first.` });
   }
   const fileCount = db.prepare('SELECT COUNT(*) as count FROM files WHERE client_id = ?').get(req.params.id);
   if (fileCount && fileCount.count > 0) {

@@ -79,7 +79,7 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
   return { finalExt, finalMimeType, finalSize, hasResized, hasThumbnail };
 }
 
-async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId) {
+async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId, apiKeyId = null) {
   const ext = path.extname(originalName).slice(1).toLowerCase();
   const type = getFileType(ext);
   if (!type) {
@@ -98,9 +98,9 @@ async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId) {
   const mime = processed.finalMimeType || mimeType;
 
   db.prepare(`
-    INSERT INTO files (id, original_name, extension, mime_type, size_bytes, client_id, type, has_thumbnail, has_resized)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(uuid, stripReEncodedExtension(originalName), processed.finalExt, mime, processed.finalSize, clientId, type, processed.hasThumbnail, processed.hasResized);
+    INSERT INTO files (id, original_name, extension, mime_type, size_bytes, client_id, api_key_id, type, has_thumbnail, has_resized)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(uuid, stripReEncodedExtension(originalName), processed.finalExt, mime, processed.finalSize, clientId, apiKeyId, type, processed.hasThumbnail, processed.hasResized);
 
   return db.prepare('SELECT * FROM files WHERE id = ?').get(uuid);
 }

@@ -3,7 +3,7 @@ const db = require('../db/connection');
 
 const publicPaths = ['/api/auth/login', '/api/auth/status', '/login.html'];
 
-const findApiKey = db.prepare('SELECT client_id FROM api_keys WHERE key_hash = ?');
+const findApiKey = db.prepare('SELECT id, client_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL');
 
 function requireAuth(req, res, next) {
   if (publicPaths.includes(req.path)) return next();
@@ -16,6 +16,7 @@ function requireAuth(req, res, next) {
     const row = findApiKey.get(hash);
     if (!row) return res.status(401).json({ error: 'Invalid API key' });
     req.authMethod = 'api-key';
+    req.apiKeyId = row.id;
     req.apiKeyClientId = row.client_id;
     return next();
   }

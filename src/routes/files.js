@@ -52,17 +52,25 @@ function fileToResponse(file) {
 
 router.get('/', requireSession, (req, res) => {
   const { client_id } = req.query;
-  let files;
-  if (client_id) {
-    files = db.prepare('SELECT * FROM files WHERE client_id = ? ORDER BY created_at DESC').all(client_id);
-  } else {
-    files = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
-  }
+  const where = client_id ? 'WHERE f.client_id = ?' : '';
+  const params = client_id ? [client_id] : [];
+  const files = db.prepare(`
+    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at
+    FROM files f
+    LEFT JOIN api_keys ak ON ak.id = f.api_key_id
+    ${where}
+    ORDER BY f.created_at DESC
+  `).all(...params);
   res.json(files.map(fileToResponse));
 });
 
 router.get('/:id', requireSession, (req, res) => {
-  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+  const file = db.prepare(`
+    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at
+    FROM files f
+    LEFT JOIN api_keys ak ON ak.id = f.api_key_id
+    WHERE f.id = ?
+  `).get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
   res.json(fileToResponse(file));
 });
@@ -87,7 +95,7 @@ router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res
     try {
       await validateUpload(f.path, f.originalname);
       const cleanName = sanitizeOriginalName(f.originalname);
-      const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id);
+      const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id, isApiKey ? req.apiKeyId : null);
       results.push(fileToResponse(file));
     } catch (err) {
       try { fs.unlinkSync(f.path); } catch {}
@@ -172,7 +180,7 @@ async function handleCoverGeneration(req, res, format, width, height) {
   const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.webp`);
   fs.writeFileSync(tmpPath, coverBuffer);
   const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
-  const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id);
+  const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id, req.authMethod === 'api-key' ? req.apiKeyId : null);
 
   const response = fileToResponse(saved);
   if (req.authMethod === 'api-key') {

@@ -46,6 +46,7 @@ const Gallery = {
     const card = document.createElement('div');
     card.className = 'file-card';
     card.dataset.fileId = file.id;
+    card.title = formatSourceTooltip(file);
 
     const previewContainer = document.createElement('div');
     previewContainer.className = 'file-card-preview-container';
@@ -184,6 +185,17 @@ const Gallery = {
     ContextMenu.show(x, y, items);
   },
 };
+
+function formatSourceTooltip(file) {
+  const lines = [file.original_name];
+  if (file.api_key_name) {
+    const revoked = file.api_key_revoked_at ? ' (revoked)' : '';
+    lines.push(`Uploaded via API key: ${file.api_key_name}${revoked}`);
+  } else {
+    lines.push('Uploaded via session');
+  }
+  return lines.join('\n');
+}
 
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';

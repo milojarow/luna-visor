@@ -19,4 +19,18 @@ try {
   // Column already exists
 }
 
+// Migration: track which API key uploaded each file
+try {
+  db.exec('ALTER TABLE files ADD COLUMN api_key_id INTEGER REFERENCES api_keys(id)');
+} catch {
+  // Column already exists
+}
+
+// Migration: soft-delete for api_keys (preserves audit trail in files.api_key_id)
+try {
+  db.exec('ALTER TABLE api_keys ADD COLUMN revoked_at TEXT');
+} catch {
+  // Column already exists
+}
+
 module.exports = db;
