@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const db = require('../db/connection');
 
-const publicPaths = ['/api/auth/login', '/api/auth/status', '/login.html'];
+const publicPaths = ['/api/auth/login', '/api/auth/status', '/api/openapi.json', '/login.html'];
 
 const findApiKey = db.prepare('SELECT id, client_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL');
 

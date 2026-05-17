@@ -51,6 +51,9 @@ app.use('/api/auth/login', loginLimiter);
 // Auth routes (before auth middleware)
 app.use('/api/auth', require('./src/routes/auth'));
 
+// Public OpenAPI 3.0.3 spec (before auth middleware)
+app.use('/api', require('./src/routes/openapi'));
+
 // Auth middleware for everything else
 app.use(requireAuth);
 
