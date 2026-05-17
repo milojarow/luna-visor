@@ -6,6 +6,7 @@ const ALLOWED_EXTS = {
   video: ['mp4', 'mov', 'webm', 'mkv'],
   audio: ['mp3'],
   vector: ['svg'],
+  lottie: ['lottie'],
 };
 
 const EXT_TO_KIND = Object.fromEntries(
@@ -61,6 +62,33 @@ async function detectKind(filePath, ext) {
     }
   }
 
+  if (ext === 'lottie') {
+    const fd = await fs.promises.open(filePath, 'r');
+    try {
+      const head = Buffer.alloc(4);
+      await fd.read(head, 0, 4, 0);
+      // dotLottie: ZIP archive (PK\x03\x04)
+      if (head[0] === 0x50 && head[1] === 0x4B && head[2] === 0x03 && head[3] === 0x04) {
+        return { kind: 'lottie', mime: 'application/zip' };
+      }
+      // Bodymovin: raw JSON — parse full file to confirm, sanity-check lottie shape
+      if (head[0] === 0x7B || head[0] === 0x20 || head[0] === 0x09 || head[0] === 0x0A || head[0] === 0x0D) {
+        const full = await fs.promises.readFile(filePath, 'utf8');
+        let parsed;
+        try { parsed = JSON.parse(full); } catch {
+          throw new ValidationError(400, 'File has .lottie extension but JSON content is invalid');
+        }
+        if (parsed && typeof parsed === 'object' && (parsed.v !== undefined || parsed.layers !== undefined || parsed.assets !== undefined)) {
+          return { kind: 'lottie', mime: 'application/json' };
+        }
+        throw new ValidationError(400, 'File has .lottie extension but JSON does not look like a Lottie animation');
+      }
+      throw new ValidationError(400, 'File has .lottie extension but content is neither dotLottie ZIP nor Bodymovin JSON');
+    } finally {
+      await fd.close();
+    }
+  }
+
   const { fileTypeFromFile } = await import('file-type');
   const detected = await fileTypeFromFile(filePath);
   if (!detected) {
@@ -79,7 +107,7 @@ async function validateUpload(filePath, originalName) {
   if (!declaredKind) {
     throw new ValidationError(
       400,
-      `File extension ".${ext || '(none)'}" not allowed. Allowed: image (jpg/png/webp/gif/avif/heic), video (mp4/mov/webm/mkv), audio (mp3), vector (svg).`
+      `File extension ".${ext || '(none)'}" not allowed. Allowed: image (jpg/png/webp/gif/avif/heic), video (mp4/mov/webm/mkv), audio (mp3), vector (svg), lottie (.lottie).`
     );
   }
   const { kind: actualKind, mime } = await detectKind(filePath, ext);

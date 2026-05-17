@@ -10,6 +10,7 @@ const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic',
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'mkv']);
 const AUDIO_EXTS = new Set(['mp3']);
 const VECTOR_EXTS = new Set(['svg']);
+const LOTTIE_EXTS = new Set(['lottie']);
 const RE_ENCODED_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
 
 function getFileType(ext) {
@@ -17,6 +18,7 @@ function getFileType(ext) {
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VECTOR_EXTS.has(ext)) return 'vector';
+  if (LOTTIE_EXTS.has(ext)) return 'lottie';
   return null;
 }
 
@@ -86,6 +88,16 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
     fs.copyFileSync(tempPath, destPath);
     finalExt = 'svg';
     finalMimeType = 'image/svg+xml';
+    finalSize = fs.statSync(destPath).size;
+  } else if (type === 'lottie') {
+    const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.lottie`);
+    fs.copyFileSync(tempPath, destPath);
+    finalExt = 'lottie';
+    const fd = fs.openSync(destPath, 'r');
+    const head = Buffer.alloc(4);
+    fs.readSync(fd, head, 0, 4, 0);
+    fs.closeSync(fd);
+    finalMimeType = (head[0] === 0x50 && head[1] === 0x4B) ? 'application/zip' : 'application/json';
     finalSize = fs.statSync(destPath).size;
   } else {
     throw new Error(`Unexpected file type after validation: ${type}`);

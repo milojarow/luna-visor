@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS files (
     size_bytes INTEGER NOT NULL,
     client_id INTEGER NOT NULL REFERENCES clients(id),
     api_key_id INTEGER REFERENCES api_keys(id),
-    type TEXT NOT NULL CHECK(type IN ('image', 'video', 'audio', 'vector')),
+    type TEXT NOT NULL CHECK(type IN ('image', 'video', 'audio', 'vector', 'lottie')),
     has_thumbnail INTEGER DEFAULT 0,
     has_resized INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
