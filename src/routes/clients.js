@@ -19,13 +19,15 @@ router.get('/', (_req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name } = req.body;
+  const { name, is_ephemeral } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
   }
   const slug = slugify(name.trim());
+  const ephemeralFlag = is_ephemeral ? 1 : 0;
   try {
-    const result = db.prepare('INSERT INTO clients (name, slug) VALUES (?, ?)').run(name.trim(), slug);
+    const result = db.prepare('INSERT INTO clients (name, slug, is_ephemeral) VALUES (?, ?, ?)')
+      .run(name.trim(), slug, ephemeralFlag);
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(client);
   } catch (err) {

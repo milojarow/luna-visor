@@ -9,6 +9,7 @@ Built for people who want to host their own CDN backing store without Cloudflare
 - **Upload and organize media** by client (logical namespaces, not directories). Drag-and-drop or paste from clipboard in the web UI, or `POST` multipart from your own apps with API keys.
 - **Served by UUID** — URLs like `https://cdn.example.com/{uuid}.webp`. Original filenames never leak. A preview variant is auto-generated for gallery thumbnails.
 - **Standard re-encoding on ingest**: every uploaded image lands as WebP and every video as MP4 (H.264/AAC), regardless of input format. Per-client `storagePolicy` overrides let you tune variants and quality for specific tenants.
+- **Ephemeral clients** (opt-in). A separate flavor of client where every upload auto-expires 24 hours after creation and is stored as-is (no re-encoding, no thumbnail variants). Created from a drop-up menu next to "+ New Client". The gallery shows a per-file "expires in Xh Ym" badge and a calendar-clock icon next to the client name everywhere it appears.
 - **Cover generator** (opt-in). Composite your brand (logo, wordmark, colors, watermark) over uploaded photos at Instagram Story / Post / Square dimensions. Optional overlay endpoint returns transparent PNGs for video compositing.
 - **Two auth methods**: session (single admin password) for the web UI; API keys scoped to a single client for server-to-server uploads from your own apps.
 - **Log scanner** (optional). Tails your reverse proxy's JSON access log and marks files as "referenced" when hit by external referers, so you can spot orphans.
@@ -123,11 +124,12 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/).
 - `POST /api/auth/logout`
 
 **Clients** (session only)
-- `GET | POST /api/clients`
-- `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or api keys)
+- `GET /api/clients` — each row includes `is_ephemeral` (0 or 1)
+- `POST /api/clients` — body `{ name, is_ephemeral?: boolean }`. Default `false`
+- `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or active api keys)
 
 **Files**
-- `GET /api/files` — list (session) — optional `?client_id=`. Each file row includes `api_key_id`, `api_key_name`, and `api_key_revoked_at` (LEFT JOINed) so you can tell which API key (or session) uploaded it. `NULL` for files uploaded before tracking was added.
+- `GET /api/files` — list (session) — optional `?client_id=`. Each file row includes `api_key_id`, `api_key_name`, `api_key_revoked_at`, and `client_is_ephemeral` (LEFT JOINed). The last lets the gallery render countdown badges. `NULL` for files uploaded before per-file API-key tracking was added.
 - `POST /api/files/upload` — multipart, field `files`, up to 20 × 500MB — session or API key. New files record the API key ID used to upload them.
 - `PATCH /api/files/:id` — move to another client (session)
 - `POST /api/files/:id/copy` — copy to another client (session)
@@ -168,6 +170,27 @@ Every image upload is re-encoded to WebP and every video to MP4 (H.264 / AAC). T
 The default image policy lives in `src/services/branding.js` as `DEFAULT_IMAGE_POLICY`: a 2048-on-the-longest-side full variant plus a 300px `-thumb` preview, both WebP at quality 82/78 with effort 6/4. Edit the constant if you want a different default for every client.
 
 Cover generator output is also WebP. Video thumbnails stay JPEG (a single frame extracted at 1s by `ffmpeg`).
+
+**Ephemeral clients bypass this entire pipeline** (see next section).
+
+## Ephemeral clients
+
+A client created with `is_ephemeral = 1` flips two switches:
+
+1. **Passthrough uploads** — files are stored as-is with their original extension. PNG stays PNG, JPG stays JPG, MOV stays MOV. No `sharp`, no `ffmpeg`, no `-thumb` / `-md` variants. The original bytes go straight to disk under `{uuid}.{ext}`.
+2. **24h auto-expire** — a background sweep (`src/services/file-expirer.js`, runs every 15 minutes via `setInterval`) deletes files whose `created_at` is older than 24 hours, along with all on-disk siblings. Cleanup re-uses the same `deleteFile()` path as manual deletion.
+
+Created from the WUI with the small `▲` drop-up next to "+ New Client", or via the API:
+
+```bash
+curl -X POST https://luna.example.com/api/clients \
+  -H 'Content-Type: application/json' \
+  -d '{ "name": "demo-2026-05", "is_ephemeral": true }'
+```
+
+API keys work identically for ephemeral clients — same `POST /api/api-keys`, same `X-API-Key` header for uploads. Cover generation also works, but the generated cover inherits the ephemeral client's `client_id` and is therefore swept along with everything else 24h after it was created.
+
+The drop-up, the calendar-clock icon next to the client's name in the sidebar / toolbar / API-keys page, and the per-file "expires in Xh Ym" badge in the gallery all key off the same `clients.is_ephemeral` flag. There is no per-file TTL override — every file in an ephemeral client follows the 24h rule.
 
 ## Branding and per-client overrides
 

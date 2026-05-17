@@ -19,7 +19,18 @@
       </div>
       <button id="btn-all-files" class="sidebar-item active">All Files</button>
       <div id="client-list"></div>
-      <button id="btn-add-client" class="sidebar-add">+ New Client</button>
+      <div class="sidebar-add-wrap">
+        <div class="sidebar-add-row">
+          <button id="btn-add-client" class="sidebar-add">+ New Client</button>
+          <button id="btn-add-client-caret" class="sidebar-add-caret" aria-label="More client options" aria-haspopup="menu" aria-expanded="false">&#x25B2;</button>
+        </div>
+        <div id="dropup-add-client" class="dropup-menu" hidden role="menu">
+          <button class="dropup-option" id="btn-add-ephemeral-client" role="menuitem">
+            <img src="/calendar-clock.svg" alt="" class="dropup-icon">
+            <span>Cliente temporal (24h)</span>
+          </button>
+        </div>
+      </div>
     </aside>
 
     <main class="main">

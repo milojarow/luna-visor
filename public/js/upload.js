@@ -48,7 +48,7 @@ const Upload = {
       if (files.length === 0) return;
 
       if (!App.currentClientId) {
-        alert('Select a client first');
+        App.showAlert('Select a client first', { title: 'Upload' });
         return;
       }
 
@@ -59,7 +59,7 @@ const Upload = {
 
   show() {
     if (!App.currentClientId) {
-      alert('Select a client first');
+      App.showAlert('Select a client first', { title: 'Upload' });
       return;
     }
     this.progressEl.innerHTML = '';
@@ -74,7 +74,7 @@ const Upload = {
   async handleFiles(fileList) {
     if (!fileList.length) return;
     if (!App.currentClientId) {
-      alert('Select a client first');
+      App.showAlert('Select a client first', { title: 'Upload' });
       return;
     }
 

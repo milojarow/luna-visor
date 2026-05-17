@@ -55,9 +55,11 @@ router.get('/', requireSession, (req, res) => {
   const where = client_id ? 'WHERE f.client_id = ?' : '';
   const params = client_id ? [client_id] : [];
   const files = db.prepare(`
-    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at
+    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
+           c.is_ephemeral AS client_is_ephemeral
     FROM files f
     LEFT JOIN api_keys ak ON ak.id = f.api_key_id
+    LEFT JOIN clients c ON c.id = f.client_id
     ${where}
     ORDER BY f.created_at DESC
   `).all(...params);
@@ -66,9 +68,11 @@ router.get('/', requireSession, (req, res) => {
 
 router.get('/:id', requireSession, (req, res) => {
   const file = db.prepare(`
-    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at
+    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
+           c.is_ephemeral AS client_is_ephemeral
     FROM files f
     LEFT JOIN api_keys ak ON ak.id = f.api_key_id
+    LEFT JOIN clients c ON c.id = f.client_id
     WHERE f.id = ?
   `).get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });

@@ -18,7 +18,9 @@ const API = {
   },
 
   getClients() { return this.request('GET', '/api/clients'); },
-  createClient(name) { return this.request('POST', '/api/clients', { name }); },
+  createClient(name, opts = {}) {
+    return this.request('POST', '/api/clients', { name, is_ephemeral: !!opts.ephemeral });
+  },
   renameClient(id, name) { return this.request('PATCH', `/api/clients/${id}`, { name }); },
   deleteClient(id) { return this.request('DELETE', `/api/clients/${id}`); },
 

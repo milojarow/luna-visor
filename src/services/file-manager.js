@@ -29,6 +29,21 @@ function stripReEncodedExtension(originalName) {
 }
 
 async function processUpload(tempPath, ext, type, uuid, clientId) {
+  // Ephemeral clients: pure passthrough — keep original format, no variants.
+  // The 24h auto-expirer will sweep these regardless of size or type.
+  const client = db.prepare('SELECT is_ephemeral FROM clients WHERE id = ?').get(clientId);
+  if (client?.is_ephemeral) {
+    const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
+    fs.copyFileSync(tempPath, destPath);
+    return {
+      finalExt: ext,
+      finalMimeType: '',
+      finalSize: fs.statSync(destPath).size,
+      hasResized: 0,
+      hasThumbnail: 0,
+    };
+  }
+
   let finalExt = ext;
   let finalMimeType = '';
   let finalSize = 0;

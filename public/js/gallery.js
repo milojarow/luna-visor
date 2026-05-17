@@ -62,6 +62,14 @@ const Gallery = {
       img.alt = file.original_name;
       img.loading = 'lazy';
       previewContainer.appendChild(img);
+    } else if (file.type === 'image' && file.client_is_ephemeral) {
+      // Ephemeral images have no -thumb variant; load the original.
+      const img = document.createElement('img');
+      img.className = 'file-card-preview';
+      img.src = `${this.cdnBase}/${file.id}.${file.extension}`;
+      img.alt = file.original_name;
+      img.loading = 'lazy';
+      previewContainer.appendChild(img);
     } else if (file.type === 'video' && file.has_thumbnail) {
       const img = document.createElement('img');
       img.className = 'file-card-preview';
@@ -92,12 +100,14 @@ const Gallery = {
     if (file.referenced) info.classList.add('file-card-info-referenced');
     const displayName = file.original_name.replace(/\.[^.]+$/, '');
     const extBadge = file.extension ? `<span class="file-card-ext">${file.extension}</span>` : '';
+    const expires = expiresBadge(file);
     info.innerHTML = `
       <div class="file-card-name" title="${file.original_name}">
         <span class="file-card-name-text">${displayName}</span>
         ${extBadge}
       </div>
       <div class="file-card-meta">${formatSize(file.size_bytes)} &middot; ${formatDate(file.created_at)}</div>
+      ${expires}
     `;
     card.appendChild(info);
 
@@ -207,4 +217,16 @@ function formatDate(dateStr) {
   const d = new Date(dateStr + 'Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
     d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function expiresBadge(file) {
+  if (!file.client_is_ephemeral) return '';
+  const created = new Date(file.created_at + 'Z');
+  const expires = new Date(created.getTime() + 24 * 3600 * 1000);
+  const msLeft = expires - Date.now();
+  if (msLeft <= 0) return '<span class="expires-badge expired">Expirado</span>';
+  const h = Math.floor(msLeft / 3600000);
+  const m = Math.floor((msLeft % 3600000) / 60000);
+  const tip = expires.toLocaleString();
+  return `<span class="expires-badge" title="Expira ${tip}">&#x23F1; ${h}h ${m}m</span>`;
 }

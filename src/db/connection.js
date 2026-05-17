@@ -33,4 +33,11 @@ try {
   // Column already exists
 }
 
+// Migration: ephemeral clients (uploads auto-expire after 24h)
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN is_ephemeral INTEGER DEFAULT 0');
+} catch {
+  // Column already exists
+}
+
 module.exports = db;

@@ -46,7 +46,7 @@ const ApiKeysPage = {
     for (const c of App.clients) {
       const opt = document.createElement('option');
       opt.value = c.id;
-      opt.textContent = c.name;
+      opt.textContent = c.is_ephemeral ? `⏱ ${c.name}` : c.name;
       this.filterSelect.appendChild(opt);
     }
     this.filterSelect.value = current;
@@ -99,13 +99,17 @@ const ApiKeysPage = {
             <path d="M3 4h10M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4v9.5a.5.5 0 00.5.5h5a.5.5 0 00.5-.5V4" fill="none" stroke="currentColor" stroke-width="1.2"/>
           </svg>
         </button>`;
+      const clientObj = App.clients.find(c => c.id === k.client_id);
+      const clientIcon = clientObj && clientObj.is_ephemeral
+        ? `<img src="/calendar-clock.svg" alt="" class="client-ephemeral-icon" title="Cliente temporal (24h)">`
+        : '';
       row.innerHTML = `
         <div class="api-key-info">
           <div class="api-key-name">
             <span class="api-key-name-text">${escapeHtml(k.name)}</span>${renameBtn}
           </div>
           <div class="api-key-meta">
-            <span class="api-key-client">${escapeHtml(k.client_name)}</span>
+            <span class="api-key-client">${clientIcon}${escapeHtml(k.client_name)}</span>
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-preview">…${k.key_preview}</span>
             <span class="api-key-meta-sep">·</span>
@@ -127,7 +131,7 @@ const ApiKeysPage = {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const clientOptions = App.clients
-      .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+      .map(c => `<option value="${c.id}">${c.is_ephemeral ? '⏱ ' : ''}${escapeHtml(c.name)}</option>`)
       .join('');
     overlay.innerHTML = `
       <div class="modal">
@@ -165,15 +169,15 @@ const ApiKeysPage = {
     overlay.querySelector('[data-action="ok"]').addEventListener('click', async () => {
       const name = nameInput.value.trim();
       const clientId = parseInt(clientSelect.value);
-      if (!name) return alert('Name is required');
-      if (!clientId) return alert('Select a client');
+      if (!name) { App.showAlert('Name is required', { title: 'New API key' }); return; }
+      if (!clientId) { App.showAlert('Select a client', { title: 'New API key' }); return; }
       try {
         const result = await API.createApiKey(name, clientId);
         cleanup();
         this.showReveal(result.key);
         await this.loadKeys();
       } catch (err) {
-        alert(err.message);
+        App.showAlert(err.message, { title: 'Could not create API key' });
       }
     });
   },
@@ -185,17 +189,21 @@ const ApiKeysPage = {
       await API.renameApiKey(key.id, newName.trim());
       await this.loadKeys();
     } catch (err) {
-      alert(err.message);
+      App.showAlert(err.message, { title: 'Could not rename API key' });
     }
   },
 
   async confirmDelete(key) {
-    if (!confirm(`Revoke API key "${key.name}"? Applications using it will lose access.`)) return;
+    const ok = await App.showConfirm(
+      `Revoke API key "${key.name}"? Applications using it will lose access.`,
+      { title: 'Revoke API key', okLabel: 'Revoke', danger: true }
+    );
+    if (!ok) return;
     try {
       await API.deleteApiKey(key.id);
       await this.loadKeys();
     } catch (err) {
-      alert(err.message);
+      App.showAlert(err.message, { title: 'Could not revoke API key' });
     }
   },
 
