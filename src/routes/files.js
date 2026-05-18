@@ -6,7 +6,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
-const { generateCover, getBranding } = require('../services/cover-generator');
+const { generateCover, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
 const { requireSession } = require('../middleware/auth');
 const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
@@ -175,6 +175,9 @@ async function handleCoverGeneration(req, res, format, width, height) {
   const brand = getBranding(file.client_id);
   if (!brand.formats.includes(format)) {
     return res.status(400).json({ error: `Format '${format}' not supported for this client` });
+  }
+  if (brand.layout === 'minimal' && req.body?.position && !MINIMAL_LOGO_POSITIONS.includes(req.body.position)) {
+    return res.status(400).json({ error: `Invalid position '${req.body.position}'. Allowed: ${MINIMAL_LOGO_POSITIONS.join(', ')}.` });
   }
 
   const sourcePath = path.join(config.MEDIA_FILES_PATH, `${file.id}.${file.extension}`);

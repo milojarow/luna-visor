@@ -61,4 +61,30 @@ module.exports = {
       ],
     },
   },
+
+  // Example: a brand that uses the MINIMAL cover layout.
+  //
+  // The minimal layout is for clients who already produce nicely-formatted
+  // images (e.g. 1080×1920 social posts pre-designed in Canva/Photoshop) and
+  // only want luna to slap a logo on a corner + a diagonal text watermark
+  // over the center for anti-theft. It does NOT resize the source — output
+  // dimensions match the input — and the cover endpoint accepts an optional
+  // `{position: "..."}` body to choose the corner (or "none" to skip the
+  // logo entirely and apply only the watermark).
+  //
+  // Logo lives as a raster file (webp/png) already uploaded to luna under
+  // this client. The path is the absolute filesystem path; the file's CDN
+  // URL is also surfaced by GET /api/me so external callers can preview it.
+  3: {
+    name: 'example-minimal',
+    layout: 'minimal',
+    logoImagePath: '/srv/media/files/REPLACE-WITH-YOUR-LOGO-UUID.webp',
+    logoSize: 200,        // pixels, square. Defaults to 200 if omitted.
+    logoMargin: 30,       // distance from the chosen corner, in pixels.
+    logoRadius: 28,       // rounded-corner radius applied as a mask, in pixels.
+    watermarkText: 'EXAMPLE MINIMAL',
+    watermarkFont: "'Inter', sans-serif",
+    watermarkOpacity: 0.18,
+    formats: ['story'],   // only enable the format(s) you actually use.
+  },
 };

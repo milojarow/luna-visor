@@ -158,10 +158,100 @@ function buildWatermark(width, height, brand) {
     </g>`;
 }
 
+// ── Minimal layout (logo + watermark, no dim/gradient/pills) ──
+// Preserves source dimensions (the route's width/height args are ignored).
+// Used by brands with `layout: 'minimal'` in branding.config.js.
+
+function buildMinimalWatermark(width, height, text, font, opacity) {
+  if (!text) return '';
+  const topMargin = 120;
+  const bottomMargin = 280;
+  const safeTop = topMargin;
+  const safeBottom = height - bottomMargin;
+  const safeHeight = safeBottom - safeTop;
+  if (safeHeight < 150) return '';
+
+  const cellW = 320;
+  const cellH = 220;
+  const cols = Math.ceil(width / cellW) + 1;
+  const rows = Math.ceil(safeHeight / cellH) + 1;
+
+  let marks = '';
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const offsetX = (r % 2 === 1) ? cellW / 2 : 0;
+      const cx = c * cellW + offsetX;
+      const cy = safeTop + r * cellH;
+      marks += `<g transform="translate(${cx}, ${cy}) rotate(-30)">
+        <text x="-80" y="8" font-family="${font}" font-size="24" font-weight="700" fill="white" letter-spacing="0.5">${escapeXml(text)}</text>
+      </g>`;
+    }
+  }
+
+  return `<g opacity="${opacity}">
+    <clipPath id="wm-clip"><rect x="0" y="${safeTop}" width="${width}" height="${safeHeight}" /></clipPath>
+    <g clip-path="url(#wm-clip)">${marks}</g>
+  </g>`;
+}
+
+const MINIMAL_LOGO_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'none'];
+
+function resolveLogoCoords(position, width, height, logoSize, logoMargin) {
+  switch (position) {
+    case 'none':         return null;
+    case 'top-left':     return { top: logoMargin,                       left: logoMargin };
+    case 'bottom-right': return { top: height - logoSize - logoMargin,   left: width - logoSize - logoMargin };
+    case 'bottom-left':  return { top: height - logoSize - logoMargin,   left: logoMargin };
+    case 'top-right':
+    default:             return { top: logoMargin,                       left: width - logoSize - logoMargin };
+  }
+}
+
+async function generateMinimalCover({ sourceBuffer, brand, position = 'top-right' }) {
+  const meta = await sharp(sourceBuffer).metadata();
+  const width = meta.width;
+  const height = meta.height;
+
+  const logoSize = brand.logoSize || 200;
+  const logoMargin = brand.logoMargin || 30;
+
+  const wmSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    ${buildMinimalWatermark(width, height, brand.watermarkText, brand.watermarkFont || "'Inter', sans-serif", brand.watermarkOpacity ?? 0.18)}
+  </svg>`;
+
+  const logoCoords = resolveLogoCoords(position, width, height, logoSize, logoMargin);
+  const wantsLogo = logoCoords && brand.logoImagePath;
+
+  const composites = [{ input: Buffer.from(wmSvg), top: 0, left: 0 }];
+
+  if (wantsLogo) {
+    const logoRadius = brand.logoRadius || 28;
+    const maskSvg = `<svg width="${logoSize}" height="${logoSize}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${logoSize}" height="${logoSize}" rx="${logoRadius}" ry="${logoRadius}" fill="white"/>
+    </svg>`;
+    const logoBuffer = await sharp(brand.logoImagePath)
+      .resize(logoSize, logoSize, { fit: 'cover' })
+      .composite([{ input: Buffer.from(maskSvg), blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+    composites.push({ input: logoBuffer, top: logoCoords.top, left: logoCoords.left });
+  }
+
+  return sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 50_000_000, sequentialRead: true })
+    .timeout({ seconds: 30 })
+    .composite(composites)
+    .webp({ quality: 90, effort: 6 })
+    .toBuffer();
+}
+
 // ── Main generator ──
 
 async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT, clientId }) {
   const brand = getBranding(clientId);
+
+  if (brand.layout === 'minimal') {
+    return generateMinimalCover({ sourceBuffer, brand, position: data?.position });
+  }
 
   const allPills = [
     pill(iconBed, data.bedrooms, "Rec."),
@@ -335,4 +425,4 @@ async function generateOverlay({ data, width = 1080, height = 1920, clientId }) 
     .toBuffer();
 }
 
-module.exports = { generateCover, generateOverlay, getBranding };
+module.exports = { generateCover, generateOverlay, getBranding, MINIMAL_LOGO_POSITIONS };
