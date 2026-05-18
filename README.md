@@ -12,6 +12,7 @@ Built for people who want to host their own CDN backing store without Cloudflare
 - **Ephemeral clients** (opt-in). A separate flavor of client where every upload auto-expires 24 hours after creation and is stored as-is (no re-encoding, no thumbnail variants). Created from a drop-up menu next to "+ New Client". The gallery shows a per-file "expires in Xh Ym" badge and a calendar-clock icon next to the client name everywhere it appears.
 - **Cover generator** (opt-in). Composite your brand (logo, wordmark, colors, watermark) over uploaded photos at Instagram Story / Post / Square dimensions. Optional overlay endpoint returns transparent PNGs for video compositing.
 - **Two auth methods**: session (single admin password) for the web UI; API keys scoped to a single client for server-to-server uploads from your own apps.
+- **Self-describing via OpenAPI 3.0.3**. A public `GET /api/openapi.json` endpoint serves the full spec — endpoints, schemas, security schemes — so an external client (a fresh LLM agent integrating from another repo, a Postman/Bruno user, an SDK generator) can onboard with a single fetch instead of needing the operator to paste docs.
 - **Log scanner** (optional). Tails your reverse proxy's JSON access log and marks files as "referenced" when hit by external referers, so you can spot orphans.
 
 ## Stack
@@ -78,6 +79,14 @@ luna.example.com {
   handle @api_key {
     reverse_proxy 127.0.0.1:3000
   }
+
+  @openapi {
+    path /api/openapi.json
+  }
+  handle @openapi {
+    reverse_proxy 127.0.0.1:3000
+  }
+
   handle {
     basic_auth {
       admin $2a$14$your-bcrypt-hash-here
@@ -87,7 +96,7 @@ luna.example.com {
 }
 ```
 
-If you add new API-key-accessible routes to the app, update the `@api_key` matcher accordingly.
+If you add new API-key-accessible routes to the app, update the `@api_key` matcher accordingly. The separate `@openapi` matcher exists so the OpenAPI spec is **fully public** (no basic_auth, no API key required) — that's what makes single-curl agent onboarding possible. If you'd rather gate it behind an API key, drop the `@openapi` block and append `/api/openapi.json` to the `@api_key` matcher's path list instead.
 
 ## Running as a systemd service
 
@@ -116,7 +125,22 @@ journalctl -u luna-visor -f
 
 ## API
 
-All routes are under `/api`. Full details in [`src/routes/`](src/routes/).
+All routes are under `/api`. Full details in [`src/routes/`](src/routes/), or fetch the OpenAPI spec for the machine-readable version.
+
+**Discovery**
+- `GET /api/openapi.json` — **public, no auth.** OpenAPI 3.0.3 specification. Describes every endpoint below, response shapes, security schemes (`apiKeyAuth` = `X-API-Key` header, `cookieAuth` = session). Source of truth is hand-written [`src/openapi.js`](src/openapi.js) — bump `info.version` (SemVer) when the contract changes.
+
+- `GET /api/me` — **requires `X-API-Key`.** Per-key context derived from the calling key: the client it belongs to, the brand layout (`default` real-estate vs `minimal` logo+watermark), the cover formats enabled, the body shape the cover endpoint expects, the watermark text, the logo's CDN URL, and the exact list of callable endpoints. The external app calls this once at boot to know what it can do — no mental filtering of the global openapi spec required. Session callers get 403 (the WUI already shows everything).
+
+  **Onboarding a new external client / agent** — give them three things and they bootstrap themselves:
+
+  ```
+  LUNA_BASE_URL=https://luna.example.com
+  LUNA_API_KEY=<RAW_KEY>            # X-API-Key header, server-to-server only
+  Start with: curl $LUNA_BASE_URL/api/me -H "X-API-Key: $LUNA_API_KEY"
+  ```
+
+  The key is the only secret. The spec itself is public on purpose; it describes the lock, not the key.
 
 **Auth**
 - `POST /api/auth/login` — body `{ password }`, sets session cookie
@@ -143,7 +167,12 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/).
 - `POST /api/files/:id/square` — 1080×1080
 - `POST /api/files/:id/fb` — 1080×1080 (Facebook post)
 
-Body accepts `operation`, `location`, `bedrooms`, `bathrooms`, `area`, and `amenities.{parking,garden,trees}`. Defaults assume a real-estate listing layout — customize [`src/services/cover-generator.js`](src/services/cover-generator.js) for a different vertical.
+Body shape depends on the client's `brand.layout`:
+
+- **`layout: 'default'`** (real-estate) — body accepts `operation`, `location`, `bedrooms`, `bathrooms`, `area`, and `amenities.{parking,garden,trees}`. Source is resized cover to the endpoint's W×H.
+- **`layout: 'minimal'`** — logo in a corner + diagonal text watermark only. Body optional; accepts `{position}` to choose the corner (`top-right` default, `top-left`, `bottom-right`, `bottom-left`, or `none` to skip the logo and apply only the watermark). **Source dimensions are preserved** — the endpoint's W×H target is ignored. Use this layout when the caller already produces images at the target size and just wants branding overlaid.
+
+Both layouts coexist in [`src/services/cover-generator.js`](src/services/cover-generator.js); the dispatcher is `generateCover` and reads `brand.layout` to switch.
 
 **Overlay** (session or API key)
 - `POST /api/overlay/generate` — same body as cover generation plus optional `width`/`height` (default 1080×1920). Returns `image/png` with transparency — intended for FFmpeg compositing onto videos, not saved to luna.
@@ -165,7 +194,11 @@ Every image upload is re-encoded to WebP and every video to MP4 (H.264 / AAC). T
 | gif | `.webp` (animated) | Frames preserved with `animated: true` |
 | mp4 | `.mp4` | Passthrough — no re-encoding |
 | mov, webm, mkv | `.mp4` | Re-encoded with `ffmpeg` to H.264/AAC + faststart |
-| anything else | as-is | Bytes copied verbatim |
+| svg | `.svg` | Passthrough — XML content validated (first 512 bytes must start with `<svg`/`<?xml`) |
+| mp3 | `.mp3` | Passthrough |
+| lottie | `.lottie` | Passthrough — bytes preserved exactly. Both dotLottie (ZIP archive) and raw Bodymovin JSON are accepted; the validator sniffs magic bytes (`PK\x03\x04` for ZIP, JSON-parse for the rest with a sanity check on lottie schema fields). No thumbnail, no variants — the animation runtime needs the original bytes. |
+
+Everything else is rejected at the upload validator with a 400. The allowlist lives in `src/services/upload-validator.js`.
 
 The default image policy lives in `src/services/branding.js` as `DEFAULT_IMAGE_POLICY`: a 2048-on-the-longest-side full variant plus a 300px `-thumb` preview, both WebP at quality 82/78 with effort 6/4. Edit the constant if you want a different default for every client.
 
@@ -196,7 +229,9 @@ The drop-up, the calendar-clock icon next to the client's name in the sidebar / 
 
 `src/services/branding.js` loads an optional `src/services/branding.config.js` (gitignored) keyed by `client_id`. Copy [`branding.config.example.js`](src/services/branding.config.example.js) and fill in entries for your clients:
 
-- **Cover generator config**: `logoIcon`, `logoWordmark`, `watermarkIcon`, `watermarkText`, `colors`, `formats`
+- **Common to all layouts**: `name`, `formats` (allowed cover format names), `storagePolicy` (optional).
+- **`layout: 'default'` (real-estate)** — SVG-composed cover with info pills, gradient dim, operation/location text. Fields: `logoIcon`, `logoWordmark`, `watermarkIcon`, `watermarkText`, `watermarkFont`, `colors.{primary,dark,accent}`.
+- **`layout: 'minimal'`** — logo in a corner + diagonal text watermark only, source dimensions preserved. Fields: `logoImagePath` (absolute path to a raster file, typically one already uploaded to luna under `/srv/media/files/<uuid>.<ext>`), `logoSize` (default 200), `logoMargin` (default 30), `logoRadius` (default 28), `watermarkText`, `watermarkFont`, `watermarkOpacity` (default 0.18).
 - **`storagePolicy` override** (optional): replaces the default image policy for a single client. Same shape as `DEFAULT_IMAGE_POLICY`:
 
   ```js
