@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.0.0',
+    version: '1.4.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -173,7 +173,7 @@ module.exports = {
       CoverBody: {
         type: 'object',
         required: ['operation', 'location', 'bedrooms', 'bathrooms', 'area'],
-        description: 'Real-estate cover content. Composited as SVG overlay onto the source image. Currently used by client posteacasa (client_id=2).',
+        description: 'Real-estate cover content. Composited as SVG overlay onto the source image. Used by clients with the default (real-estate) layout, e.g. posteacasa (client_id=2).',
         properties: {
           operation: { type: 'string', example: 'Casa en Venta' },
           location: { type: 'string', example: 'Reynosa, Tamaulipas' },
@@ -192,6 +192,21 @@ module.exports = {
         },
       },
 
+      MinimalCoverBody: {
+        type: 'object',
+        description: 'Body for clients with `layout: "minimal"` in branding.config.js (e.g. tacos-elcamioncito, client_id=6). All fields optional — sending `{}` is valid. The minimal layout composites the client logo in one corner and a diagonal text watermark over the center, preserving source dimensions.',
+        additionalProperties: false,
+        properties: {
+          position: {
+            type: 'string',
+            enum: ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'none'],
+            default: 'top-right',
+            description: 'Which corner to place the logo. Useful when the source image already has a logo in one corner — pick a different one to avoid overlap. Use `"none"` to skip the logo entirely (only the diagonal watermark is applied) — useful when the source already includes a big, polished brand mark and you only want the anti-theft watermark.',
+          },
+        },
+        example: { position: 'bottom-left' },
+      },
+
       OverlayBody: {
         allOf: [
           { $ref: '#/components/schemas/CoverBody' },
@@ -204,6 +219,77 @@ module.exports = {
             },
           },
         ],
+      },
+
+      MeResponse: {
+        type: 'object',
+        description: 'Per-key configuration returned by GET /me. Tells the caller everything they need to know about their key: which client they belong to, the branding layout (default vs minimal), the body shape expected by cover endpoints, the watermark text, the logo URL, and which endpoints they can call.',
+        required: ['client', 'api_key', 'branding', 'rate_limits', 'callable_endpoints'],
+        properties: {
+          client: {
+            type: 'object',
+            required: ['id', 'name', 'slug', 'is_ephemeral'],
+            properties: {
+              id: { type: 'integer', example: 6 },
+              name: { type: 'string', example: 'tacos-elcamioncito' },
+              slug: { type: 'string', example: 'tacos-elcamioncito' },
+              is_ephemeral: { type: 'boolean', example: false, description: 'true = uploads bypass transcoding and auto-delete after 24h.' },
+            },
+          },
+          api_key: {
+            type: 'object',
+            required: ['id', 'name', 'key_preview', 'created_at'],
+            properties: {
+              id: { type: 'integer', example: 12 },
+              name: { type: 'string', example: 'key para backend tacos' },
+              key_preview: { type: 'string', example: '4f2a', description: 'Last 4 chars of the raw key.' },
+              created_at: { type: 'string', format: 'date-time' },
+            },
+          },
+          branding: {
+            type: 'object',
+            required: ['layout', 'available_cover_formats', 'cover_body_example'],
+            properties: {
+              layout: { type: 'string', enum: ['default', 'minimal'], example: 'minimal', description: '`default` = real-estate-style cover (logo + gradient dim + info pills + operation/location text). `minimal` = logo top-right + diagonal text watermark only, source dimensions preserved.' },
+              available_cover_formats: { type: 'array', items: { type: 'string', enum: ['story', 'cover', 'square', 'fb'] }, example: ['story'], description: 'Whitelist of cover format endpoints the client can call. Formats not listed return 400.' },
+              cover_body_example: { type: 'object', description: 'A valid example body for the cover endpoints. `{}` for `minimal` layout, a full CoverBody for `default`.' },
+              watermark_text: { type: 'string', nullable: true, example: 'TACOS EL CAMIONCITO' },
+              watermark_font: { type: 'string', nullable: true, example: "'Inter', sans-serif" },
+              logo_cdn_url: { type: 'string', format: 'uri', nullable: true, example: 'https://cdn.solutions45.com/18fc43cf-4fe4-4d63-9202-403fce18cf93.webp', description: 'Public CDN URL of the logo image used by cover/overlay endpoints. Omitted if the brand has no logo.' },
+              available_logo_positions: {
+                type: 'array',
+                items: { type: 'string', enum: ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'none'] },
+                example: ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'none'],
+                description: 'Values accepted by `position` in the cover body. `"none"` means: skip the logo, apply only the watermark — use this when the source already has a prominent brand mark of its own. Only present when `layout === "minimal"`.',
+              },
+            },
+          },
+          rate_limits: {
+            type: 'object',
+            properties: {
+              upload_per_minute: { type: 'integer', example: 60 },
+              cover_per_minute: { type: 'integer', example: 30 },
+              overlay_per_minute: { type: 'integer', example: 30 },
+            },
+          },
+          callable_endpoints: {
+            type: 'array',
+            items: { type: 'string' },
+            example: [
+              'POST /api/files/upload',
+              'POST /api/files/{id}/replace',
+              'DELETE /api/files/{id}',
+              'POST /api/files/{id}/story',
+              'POST /api/overlay/generate',
+            ],
+            description: 'Endpoints the key may invoke. Cover endpoints are included only for formats in `available_cover_formats`.',
+          },
+          notes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Free-form context lines: how cdn_url is built, what body shape the cover endpoint wants, whether the client is ephemeral, etc.',
+          },
+        },
       },
     },
 
@@ -267,6 +353,31 @@ module.exports = {
           200: {
             description: 'OpenAPI 3.0.3 document.',
             content: { 'application/json': { schema: { type: 'object' } } },
+          },
+        },
+      },
+    },
+    '/me': {
+      get: {
+        tags: ['Discovery'],
+        summary: 'Per-key context: client, branding, callable endpoints, body shapes.',
+        description: [
+          'Returns the configuration relevant to the authenticated API key. **Call this once at startup** to know exactly what your key can do — what client you belong to, which cover formats are enabled, what body shape to send to cover endpoints (`{}` for minimal layout vs full CoverBody for default), the watermark text, and the logo URL.',
+          '',
+          'Standard `/me` pattern (Stripe, GitHub, etc.). Filters the global `/openapi.json` down to just what applies to your key — no mental filtering required.',
+          '',
+          'Requires `X-API-Key`. Session auth returns 403 (sessions already have the WUI to inspect everything).',
+        ].join('\n'),
+        security: [{ apiKeyAuth: [] }],
+        responses: {
+          200: {
+            description: 'Per-key config.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/MeResponse' } } },
+          },
+          401: { $ref: '#/components/responses/Unauthorized' },
+          403: {
+            description: 'Session auth was used instead of X-API-Key.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' }, example: { error: 'X-API-Key required — this endpoint returns per-key context' } } },
           },
         },
       },
@@ -727,19 +838,24 @@ function makeCoverPath(format, width, height, description) {
       tags: ['Covers'],
       summary: `Generate a ${width}×${height} ${description}.`,
       description: [
-        `Composites a branded SVG overlay (logo, watermark, gradient, info pills) onto the source image.`,
+        `Composites a branded overlay onto the source image. The exact layout depends on the client's \`layout\` field in \`src/services/branding.config.js\`:`,
+        '',
+        `- **Default (real-estate)** — logo, gradient dim, info pills (bedrooms/bathrooms/area), operation + location text. Requires a full \`CoverBody\`. Output dimensions: ${width}×${height} (source is resized cover).`,
+        `- **\`layout: "minimal"\`** — logo in a corner + diagonal text watermark only. Body is optional (\`{}\` is fine); accepts \`{position}\` to choose the corner (top-right default, also top-left/bottom-right/bottom-left, or \`"none"\` to skip the logo and apply only the watermark). Source dimensions are preserved (the ${width}×${height} target is skipped).`,
         '',
         `The result is saved as a NEW file in luna under the same client_id. Returns full File for session, FileMinimal for API key.`,
         '',
-        `Per-client branding lives in \`src/services/branding.config.js\`. If the client's \`formats\` array does not include \`'${format}'\`, returns 400.`,
+        `If the client's \`formats\` array does not include \`'${format}'\`, returns 400.`,
         '',
         `Source file must be \`type='image'\`. Rate limited to 30 generations/min per API key (or per IP).`,
       ].join('\n'),
       security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
       requestBody: {
-        required: true,
+        required: false,
         content: {
-          'application/json': { schema: { $ref: '#/components/schemas/CoverBody' } },
+          'application/json': {
+            schema: { oneOf: [{ $ref: '#/components/schemas/CoverBody' }, { $ref: '#/components/schemas/MinimalCoverBody' }] },
+          },
         },
       },
       responses: {
