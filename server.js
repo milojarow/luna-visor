@@ -65,6 +65,7 @@ app.use('/api/clients', requireSession, require('./src/routes/clients'));
 app.use('/api/files', require('./src/routes/files'));
 app.use('/api/api-keys', requireSession, require('./src/routes/api-keys'));
 app.use('/api/overlay', require('./src/routes/overlay'));
+app.use('/api/me', require('./src/routes/me'));
 
 // Error handler
 app.use(require('./src/middleware/error'));
