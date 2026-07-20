@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.4.0',
+    version: '1.5.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -40,11 +40,11 @@ module.exports = {
   tags: [
     { name: 'Discovery', description: 'API metadata (this spec).' },
     { name: 'Auth', description: 'Session login/logout/status.' },
-    { name: 'Clients', description: 'Logical owners of files. Each API key belongs to exactly one client.' },
+    { name: 'Clients', description: 'Logical owners of files. Create+list accept session or admin key; rename/delete are session-only.' },
     { name: 'Files', description: 'Upload, list, replace, move, copy, delete files. UUIDs are public identifiers.' },
     { name: 'Covers', description: 'Branded Instagram/Facebook images (1080×1920 / 1080×1350 / 1080×1080). Per-client branding registry.' },
     { name: 'Overlay', description: 'Transparent PNG overlays for video compositing (video-forge integration).' },
-    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Session-only.' },
+    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Rename/revoke session-only.' },
   ],
 
   components: {
@@ -53,7 +53,7 @@ module.exports = {
         type: 'apiKey',
         in: 'header',
         name: 'X-API-Key',
-        description: 'Server-to-server credential. Scoped to a single client_id. Soft-revocable.',
+        description: 'Server-to-server credential. Client-scoped keys operate on files; admin keys (is_admin=1) create clients and mint client keys. Soft-revocable.',
       },
       cookieAuth: {
         type: 'apiKey',
@@ -144,13 +144,14 @@ module.exports = {
 
       ApiKey: {
         type: 'object',
-        required: ['id', 'name', 'key_preview', 'client_id'],
+        required: ['id', 'name', 'key_preview'],
         properties: {
           id: { type: 'integer', example: 7 },
           name: { type: 'string', example: 'key para posteacasa' },
           key_preview: { type: 'string', example: '4f2a', description: 'Last 4 chars of the raw key, for identification.' },
-          client_id: { type: 'integer', example: 2 },
-          client_name: { type: 'string', example: 'posteacasa' },
+          client_id: { type: 'integer', nullable: true, example: 2, description: 'NULL for admin keys.' },
+          client_name: { type: 'string', nullable: true, example: 'posteacasa', description: 'NULL for admin keys.' },
+          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, no file access, client_id NULL).' },
           created_at: { type: 'string', format: 'date-time' },
           revoked_at: { type: 'string', format: 'date-time', nullable: true, description: 'Non-null = soft-deleted; auth lookups skip revoked keys.' },
         },
@@ -158,15 +159,16 @@ module.exports = {
 
       ApiKeyCreated: {
         type: 'object',
-        required: ['id', 'name', 'key', 'key_preview', 'client_id'],
+        required: ['id', 'name', 'key', 'key_preview'],
         description: 'Returned ONCE on creation. The `key` value cannot be retrieved later — store it now.',
         properties: {
           id: { type: 'integer', example: 7 },
           name: { type: 'string', example: 'key para posteacasa' },
           key: { type: 'string', example: 'a1b2c3d4e5f6...64hex', description: 'Raw API key. 64 hex chars (32 bytes). Use as X-API-Key header.' },
           key_preview: { type: 'string', example: '4f2a' },
-          client_id: { type: 'integer', example: 2 },
-          client_name: { type: 'string', example: 'posteacasa' },
+          client_id: { type: 'integer', nullable: true, example: 2, description: 'NULL for admin keys.' },
+          client_name: { type: 'string', nullable: true, example: 'posteacasa', description: 'NULL for admin keys.' },
+          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, no file access, client_id NULL).' },
         },
       },
 
@@ -367,6 +369,8 @@ module.exports = {
           'Standard `/me` pattern (Stripe, GitHub, etc.). Filters the global `/openapi.json` down to just what applies to your key — no mental filtering required.',
           '',
           'Requires `X-API-Key`. Session auth returns 403 (sessions already have the WUI to inspect everything).',
+          '',
+          'Admin keys receive `{ api_key, callable_endpoints, notes }` — no client/branding context.',
         ].join('\n'),
         security: [{ apiKeyAuth: [] }],
         responses: {
@@ -448,8 +452,8 @@ module.exports = {
     '/clients': {
       get: {
         tags: ['Clients'],
-        summary: 'List all clients with file counts.',
-        security: [{ cookieAuth: [] }],
+        summary: 'List all clients with file counts. Session or admin key (client-scoped keys get 403).',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         responses: {
           200: {
             description: 'Array of clients ordered by name.',
@@ -461,9 +465,9 @@ module.exports = {
       },
       post: {
         tags: ['Clients'],
-        summary: 'Create a new client.',
+        summary: 'Create a new client. Session or admin key (client-scoped keys get 403).',
         description: 'Set `is_ephemeral: true` for temp clients (uploads bypass transcoding and auto-delete after 24h).',
-        security: [{ cookieAuth: [] }],
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -757,8 +761,8 @@ module.exports = {
     '/api-keys': {
       get: {
         tags: ['ApiKeys'],
-        summary: 'List all API keys (active first, revoked last).',
-        security: [{ cookieAuth: [] }],
+        summary: 'List all API keys (active first, revoked last). Session or admin key (client-scoped keys get 403).',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         responses: {
           200: { description: 'Array of API keys.', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/ApiKey' } } } } },
           401: { $ref: '#/components/responses/Unauthorized' },
@@ -767,18 +771,19 @@ module.exports = {
       },
       post: {
         tags: ['ApiKeys'],
-        summary: 'Create a new API key. Raw key is returned ONCE.',
-        security: [{ cookieAuth: [] }],
+        summary: 'Create a new API key. Raw key is returned ONCE. Session or admin key (client-scoped keys get 403).',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
           content: {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['name', 'client_id'],
+                required: ['name'],
                 properties: {
                   name: { type: 'string', example: 'key para nuevo-cliente' },
-                  client_id: { type: 'integer' },
+                  client_id: { type: 'integer', description: 'Required unless is_admin. Must be omitted when is_admin=true (400).' },
+                  is_admin: { type: 'boolean', default: false, description: 'Mint an admin key. Session-only — API-key callers get 403.' },
                 },
               },
             },
