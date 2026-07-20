@@ -103,13 +103,16 @@ const ApiKeysPage = {
       const clientIcon = clientObj && clientObj.is_ephemeral
         ? `<img src="/calendar-clock.svg" alt="" class="client-ephemeral-icon" title="Cliente temporal (24h)">`
         : '';
+      const clientLabel = k.is_admin
+        ? '<span class="api-key-admin-badge">Admin</span>'
+        : `${clientIcon}${escapeHtml(k.client_name)}`;
       row.innerHTML = `
         <div class="api-key-info">
           <div class="api-key-name">
             <span class="api-key-name-text">${escapeHtml(k.name)}</span>${renameBtn}
           </div>
           <div class="api-key-meta">
-            <span class="api-key-client">${clientIcon}${escapeHtml(k.client_name)}</span>
+            <span class="api-key-client">${clientLabel}</span>
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-preview">…${k.key_preview}</span>
             <span class="api-key-meta-sep">·</span>
@@ -140,6 +143,7 @@ const ApiKeysPage = {
           <input type="text" id="ak-create-name" placeholder="Key name (e.g. Production Server)">
           <select id="ak-create-client">
             <option value="">Select a client…</option>
+            <option value="__admin__">Admin — todos los clients</option>
             ${clientOptions}
           </select>
         </div>
@@ -168,11 +172,12 @@ const ApiKeysPage = {
 
     overlay.querySelector('[data-action="ok"]').addEventListener('click', async () => {
       const name = nameInput.value.trim();
-      const clientId = parseInt(clientSelect.value);
+      const isAdmin = clientSelect.value === '__admin__';
+      const clientId = isAdmin ? null : parseInt(clientSelect.value);
       if (!name) { App.showAlert('Name is required', { title: 'New API key' }); return; }
-      if (!clientId) { App.showAlert('Select a client', { title: 'New API key' }); return; }
+      if (!isAdmin && !clientId) { App.showAlert('Select a client', { title: 'New API key' }); return; }
       try {
-        const result = await API.createApiKey(name, clientId);
+        const result = await API.createApiKey(name, clientId, isAdmin);
         cleanup();
         this.showReveal(result.key);
         await this.loadKeys();

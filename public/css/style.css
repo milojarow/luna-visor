@@ -917,6 +917,17 @@ body {
   letter-spacing: 0.05em;
 }
 
+.api-key-admin-badge {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 0.4em;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
 /* Toolbar — filter en api-keys view */
 .toolbar-api-keys {
   display: flex;

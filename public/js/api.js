@@ -53,7 +53,9 @@ const API = {
   },
 
   getApiKeys() { return this.request('GET', '/api/api-keys'); },
-  createApiKey(name, clientId) { return this.request('POST', '/api/api-keys', { name, client_id: clientId }); },
+  createApiKey(name, clientId, isAdmin = false) {
+    return this.request('POST', '/api/api-keys', isAdmin ? { name, is_admin: true } : { name, client_id: clientId });
+  },
   renameApiKey(id, name) { return this.request('PATCH', `/api/api-keys/${id}`, { name }); },
   deleteApiKey(id) { return this.request('DELETE', `/api/api-keys/${id}`); },
 
