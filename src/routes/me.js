@@ -11,6 +11,31 @@ router.get('/', (req, res) => {
     return res.status(403).json({ error: 'X-API-Key required — this endpoint returns per-key context' });
   }
 
+  if (req.isAdminKey) {
+    const apiKey = db.prepare('SELECT id, name, key_preview, created_at FROM api_keys WHERE id = ?').get(req.apiKeyId);
+    return res.json({
+      api_key: {
+        id: apiKey.id,
+        name: apiKey.name,
+        key_preview: apiKey.key_preview,
+        created_at: apiKey.created_at,
+        is_admin: true,
+      },
+      callable_endpoints: [
+        'GET /api/clients',
+        'POST /api/clients',
+        'GET /api/api-keys',
+        'POST /api/api-keys',
+      ],
+      notes: [
+        'Admin key: onboarding only — create clients and mint client-scoped keys. File operations require a client-scoped key.',
+        'POST /api/clients body: { name, is_ephemeral? }. Returns 201 with the client row; 409 if the name already exists.',
+        'POST /api/api-keys body: { name, client_id }. The raw key is returned ONCE — deliver it to the client app immediately.',
+        'Creating admin keys via API is forbidden (session/WUI only). Rename/delete/revoke are session-only too.',
+      ],
+    });
+  }
+
   const client = db.prepare('SELECT id, name, slug, is_ephemeral FROM clients WHERE id = ?').get(req.apiKeyClientId);
   const apiKey = db.prepare('SELECT id, name, key_preview, created_at FROM api_keys WHERE id = ?').get(req.apiKeyId);
   const brand = getBranding(client.id);
