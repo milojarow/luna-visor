@@ -77,4 +77,38 @@ try {
   console.error('Migration FAILED (files.type CHECK extension for lottie):', e.message);
 }
 
+// Migration: admin API keys — client_id becomes nullable + is_admin flag.
+// SQLite can't drop NOT NULL in place: rebuild the table (same pattern as the
+// files.type CHECK migration above). files.api_key_id FK survives because the
+// rebuilt table takes the same name.
+try {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='api_keys'").get();
+  if (row && row.sql && !row.sql.includes('is_admin')) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      BEGIN TRANSACTION;
+      CREATE TABLE api_keys_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        key_hash TEXT NOT NULL UNIQUE,
+        key_preview TEXT NOT NULL,
+        client_id INTEGER REFERENCES clients(id),
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        revoked_at TEXT,
+        CHECK ((is_admin = 1 AND client_id IS NULL) OR (is_admin = 0 AND client_id IS NOT NULL))
+      );
+      INSERT INTO api_keys_new (id, name, key_hash, key_preview, client_id, is_admin, created_at, revoked_at)
+        SELECT id, name, key_hash, key_preview, client_id, 0, created_at, revoked_at FROM api_keys;
+      DROP TABLE api_keys;
+      ALTER TABLE api_keys_new RENAME TO api_keys;
+      COMMIT;
+    `);
+    db.pragma('foreign_keys = ON');
+    console.log('Migration applied: api_keys is_admin + nullable client_id');
+  }
+} catch (e) {
+  console.error('Migration FAILED (api_keys admin rebuild):', e.message);
+}
+
 module.exports = db;

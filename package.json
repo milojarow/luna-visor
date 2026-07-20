@@ -4,7 +4,8 @@
   "description": "Self-hosted CDN manager with a web UI — upload, organize, and serve media files by UUID. Multi-tenant via API keys, per-client storage policies, optional branded cover generation.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "keywords": [
     "cdn",
