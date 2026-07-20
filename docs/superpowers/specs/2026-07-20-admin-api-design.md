@@ -95,7 +95,7 @@ Document the new guard semantics on clients/api-keys GET+POST, the `is_admin` re
 | admin key | `GET /api/clients`, `GET /api/api-keys` | 200 |
 | admin key | `POST /api/api-keys` (client key) | 201, raw key once |
 | admin key | `POST /api/api-keys` `is_admin: true` | 403 |
-| admin key | `PATCH/DELETE /api/clients/:id`, `DELETE /api/api-keys/:id` | 403 |
+| admin key | `PATCH/DELETE /api/clients/:id`, `DELETE /api/api-keys/:id` | 401 from Caddy basic_auth (`/:id` paths deliberately not in the bypass matcher; Express `requireSession` 403 is the second line of defense) |
 | admin key | `POST /api/files/upload`, `POST /api/overlay/generate` | 403 |
 | admin key | `GET /api/me` | 200 admin context |
 | client key | `POST /api/clients` | 403 (no regression) |
