@@ -3,7 +3,7 @@ const db = require('../db/connection');
 
 const publicPaths = ['/api/auth/login', '/api/auth/status', '/api/openapi.json', '/login.html'];
 
-const findApiKey = db.prepare('SELECT id, client_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL');
+const findApiKey = db.prepare('SELECT id, client_id, is_admin FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL');
 
 function requireAuth(req, res, next) {
   if (publicPaths.includes(req.path)) return next();
@@ -18,6 +18,7 @@ function requireAuth(req, res, next) {
     req.authMethod = 'api-key';
     req.apiKeyId = row.id;
     req.apiKeyClientId = row.client_id;
+    req.isAdminKey = row.is_admin === 1;
     return next();
   }
 
@@ -39,4 +40,17 @@ function requireSession(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireSession };
+function requireSessionOrAdmin(req, res, next) {
+  if (req.authMethod === 'session') return next();
+  if (req.authMethod === 'api-key' && req.isAdminKey) return next();
+  return res.status(403).json({ error: 'Session or admin API key required' });
+}
+
+function blockAdminKeys(req, res, next) {
+  if (req.authMethod === 'api-key' && req.isAdminKey) {
+    return res.status(403).json({ error: 'Admin keys cannot access file endpoints; use a client-scoped key' });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireSession, requireSessionOrAdmin, blockAdminKeys };
