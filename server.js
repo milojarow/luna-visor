@@ -30,7 +30,7 @@ app.use(session({
   },
 }));
 
-const { requireAuth, requireSession } = require('./src/middleware/auth');
+const { requireAuth, blockAdminKeys } = require('./src/middleware/auth');
 
 // Static files (login page must be accessible without auth)
 app.use('/login.html', express.static(path.join(__dirname, 'public', 'login.html')));
@@ -60,11 +60,11 @@ app.use(requireAuth);
 // Protected static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API routes
-app.use('/api/clients', requireSession, require('./src/routes/clients'));
-app.use('/api/files', require('./src/routes/files'));
-app.use('/api/api-keys', requireSession, require('./src/routes/api-keys'));
-app.use('/api/overlay', require('./src/routes/overlay'));
+// API routes — clients/api-keys guard per-route (create+list open to admin keys)
+app.use('/api/clients', require('./src/routes/clients'));
+app.use('/api/files', blockAdminKeys, require('./src/routes/files'));
+app.use('/api/api-keys', require('./src/routes/api-keys'));
+app.use('/api/overlay', blockAdminKeys, require('./src/routes/overlay'));
 app.use('/api/me', require('./src/routes/me'));
 
 // Error handler

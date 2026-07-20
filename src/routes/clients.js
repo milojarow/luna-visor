@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const db = require('../db/connection');
+const { requireSession, requireSessionOrAdmin } = require('../middleware/auth');
 
 const router = Router();
 
@@ -7,7 +8,7 @@ function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-router.get('/', (_req, res) => {
+router.get('/', requireSessionOrAdmin, (_req, res) => {
   const clients = db.prepare(`
     SELECT c.*, COUNT(f.id) as file_count
     FROM clients c
@@ -18,7 +19,7 @@ router.get('/', (_req, res) => {
   res.json(clients);
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireSessionOrAdmin, (req, res) => {
   const { name, is_ephemeral } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
@@ -38,7 +39,7 @@ router.post('/', (req, res) => {
   }
 });
 
-router.patch('/:id', (req, res) => {
+router.patch('/:id', requireSession, (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
@@ -52,7 +53,7 @@ router.patch('/:id', (req, res) => {
   res.json(client);
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireSession, (req, res) => {
   const apiKeyCount = db.prepare('SELECT COUNT(*) as count FROM api_keys WHERE client_id = ? AND revoked_at IS NULL').get(req.params.id);
   if (apiKeyCount && apiKeyCount.count > 0) {
     return res.status(409).json({ error: `Client has ${apiKeyCount.count} active API key(s). Revoke them first.` });
