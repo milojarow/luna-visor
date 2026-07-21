@@ -39,15 +39,22 @@ router.post('/', requireSessionOrAdmin, (req, res) => {
   }
 });
 
-router.patch('/:id', requireSession, (req, res) => {
+router.patch('/:id', requireSessionOrAdmin, (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
   }
   const slug = slugify(name.trim());
-  const result = db.prepare('UPDATE clients SET name = ?, slug = ? WHERE id = ?').run(name.trim(), slug, req.params.id);
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Client not found' });
+  try {
+    const result = db.prepare('UPDATE clients SET name = ?, slug = ? WHERE id = ?').run(name.trim(), slug, req.params.id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Client already exists' });
+    }
+    throw err;
   }
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
   res.json(client);

@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.6.0',
+    version: '1.7.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -40,11 +40,11 @@ module.exports = {
   tags: [
     { name: 'Discovery', description: 'API metadata (this spec).' },
     { name: 'Auth', description: 'Session login/logout/status.' },
-    { name: 'Clients', description: 'Logical owners of files. Create+list accept session or admin key; rename/delete are session-only.' },
+    { name: 'Clients', description: 'Logical owners of files. Create/list/rename accept session or admin key; delete is session-only.' },
     { name: 'Files', description: 'Upload, list, replace, move, copy, delete files. UUIDs are public identifiers.' },
     { name: 'Covers', description: 'Branded Instagram/Facebook images (1080×1920 / 1080×1350 / 1080×1080). Per-client branding registry.' },
     { name: 'Overlay', description: 'Transparent PNG overlays for video compositing (video-forge integration).' },
-    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Revoke: session, or admin key (client keys only). Rename: session-only.' },
+    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Rename/revoke: session, or admin key (client keys only — admin-key targets are WUI-managed).' },
   ],
 
   components: {
@@ -496,8 +496,9 @@ module.exports = {
       parameters: [{ $ref: '#/components/parameters/ClientIdParam' }],
       patch: {
         tags: ['Clients'],
-        summary: 'Rename a client.',
-        security: [{ cookieAuth: [] }],
+        summary: 'Rename a client. Session or admin key.',
+        description: 'The slug re-derives from the new name. 409 if another client already has that name.',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -516,6 +517,7 @@ module.exports = {
           401: { $ref: '#/components/responses/Unauthorized' },
           403: { $ref: '#/components/responses/Forbidden' },
           404: { $ref: '#/components/responses/NotFound' },
+          409: { $ref: '#/components/responses/Conflict' },
         },
       },
       delete: {
@@ -802,8 +804,9 @@ module.exports = {
       parameters: [{ $ref: '#/components/parameters/ApiKeyIdParam' }],
       patch: {
         tags: ['ApiKeys'],
-        summary: 'Rename an API key.',
-        security: [{ cookieAuth: [] }],
+        summary: 'Rename an API key. Session or admin key (client keys only).',
+        description: 'Admin-key callers can rename CLIENT keys only — renaming an admin key returns 403; admin keys are WUI-managed.',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
           content: {

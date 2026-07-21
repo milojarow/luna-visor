@@ -147,7 +147,7 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/), or fe
 - `GET /api/auth/status` — returns `{ authenticated, cdn_base_url }`
 - `POST /api/auth/logout`
 
-**Clients** (create+list: session or admin key; rename/delete: session only)
+**Clients** (create/list/rename: session or admin key; delete: session only)
 - `GET /api/clients` — each row includes `is_ephemeral` (0 or 1)
 - `POST /api/clients` — body `{ name, is_ephemeral?: boolean }`. Default `false`
 - `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or active api keys)
@@ -177,14 +177,14 @@ Both layouts coexist in [`src/services/cover-generator.js`](src/services/cover-g
 **Overlay** (session or API key)
 - `POST /api/overlay/generate` — same body as cover generation plus optional `width`/`height` (default 1080×1920). Returns `image/png` with transparency — intended for FFmpeg compositing onto videos, not saved to luna.
 
-**API keys** (create+list: session or admin key; rename/revoke: session only)
+**API keys** (create/list: session or admin key; rename/revoke: session, or admin key for client-key targets)
 - `GET /api/api-keys` — list (with client names, `is_admin`, and `revoked_at`). Active keys come first, revoked ones last.
 - `POST /api/api-keys` — create, returns the raw key **once**; store it immediately. Body `{ name, client_id }`, or `{ name, is_admin: true }` for an admin key (**session only** — API-key callers get 403, so an admin key can never mint another admin key).
 - `DELETE /api/api-keys/:id` — soft delete (sets `revoked_at` instead of removing the row). Session, or admin key (**client keys only** — revoking an admin key via API returns 403). The key stops authenticating immediately, but the row sticks around so files uploaded by it still resolve to its name in `GET /files`. There is no "undelete".
 
 API key header: `X-API-Key: <raw-key>`. Client-scoped keys are tied to a single `client_id` — they can upload to, replace, delete, and generate covers from files of that client only.
 
-**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can create and list clients and API keys, and **revoke client keys** — the full key lifecycle (create client → mint its key → hand the key to the app → revoke it when rotated out) with zero WUI involvement. They cannot touch files, covers, or overlays (explicit 403), cannot rename anything or delete clients, cannot mint more admin keys, and cannot revoke admin keys (including themselves) — admin keys are WUI-managed, so a leaked admin key can never lock the human out. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
+**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can create, list, and rename clients and API keys, and **revoke client keys** — the full lifecycle (create client → mint its key → hand the key to the app → rename/revoke on rotation) with zero WUI involvement. They cannot touch files, covers, or overlays (explicit 403), cannot delete clients, cannot mint more admin keys, and cannot rename or revoke admin keys (including themselves) — admin keys are WUI-managed, so a leaked admin key can never lock the human out. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
 
 ## Storage standard
 

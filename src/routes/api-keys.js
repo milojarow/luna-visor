@@ -58,10 +58,18 @@ router.post('/', requireSessionOrAdmin, (req, res) => {
   });
 });
 
-router.patch('/:id', requireSession, (req, res) => {
+router.patch('/:id', requireSessionOrAdmin, (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'name required' });
+  }
+  // Admin keys may rename client keys only — admin keys stay WUI-managed.
+  if (req.authMethod === 'api-key') {
+    const target = db.prepare('SELECT is_admin FROM api_keys WHERE id = ?').get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'API key not found' });
+    if (target.is_admin) {
+      return res.status(403).json({ error: 'Admin keys can only be renamed from the WUI (session)' });
+    }
   }
   const result = db.prepare('UPDATE api_keys SET name = ? WHERE id = ?')
     .run(name.trim(), req.params.id);

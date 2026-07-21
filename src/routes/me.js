@@ -24,16 +24,19 @@ router.get('/', (req, res) => {
       callable_endpoints: [
         'GET /api/clients',
         'POST /api/clients',
+        'PATCH /api/clients/{id}',
         'GET /api/api-keys',
         'POST /api/api-keys',
+        'PATCH /api/api-keys/{id}',
         'DELETE /api/api-keys/{id}',
       ],
       notes: [
-        'Admin key: onboarding + key lifecycle — create clients, mint client-scoped keys, revoke client-scoped keys. File operations require a client-scoped key.',
+        'Admin key: onboarding + key lifecycle — create/rename clients, mint/rename/revoke client-scoped keys. File operations require a client-scoped key.',
         'POST /api/clients body: { name, is_ephemeral? }. Returns 201 with the client row; 409 if the name already exists.',
+        'PATCH /api/clients/{id} body: { name }. Renames the client (slug re-derives); 409 on name collision.',
         'POST /api/api-keys body: { name, client_id }. The raw key is returned ONCE — deliver it to the client app immediately.',
-        'DELETE /api/api-keys/{id} revokes CLIENT keys only (soft delete, immediate). Admin keys 403 — they are WUI-managed.',
-        'Creating admin keys via API is forbidden (session/WUI only). Renaming keys and deleting/renaming clients are session-only too.',
+        'PATCH /api/api-keys/{id} body: { name }, and DELETE /api/api-keys/{id} (revoke, soft delete, immediate) — CLIENT keys only. Admin keys 403 — they are WUI-managed.',
+        'Creating admin keys via API is forbidden (session/WUI only). Deleting clients is session-only too.',
       ],
     });
   }
