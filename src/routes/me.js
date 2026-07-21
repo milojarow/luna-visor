@@ -26,12 +26,14 @@ router.get('/', (req, res) => {
         'POST /api/clients',
         'GET /api/api-keys',
         'POST /api/api-keys',
+        'DELETE /api/api-keys/{id}',
       ],
       notes: [
-        'Admin key: onboarding only — create clients and mint client-scoped keys. File operations require a client-scoped key.',
+        'Admin key: onboarding + key lifecycle — create clients, mint client-scoped keys, revoke client-scoped keys. File operations require a client-scoped key.',
         'POST /api/clients body: { name, is_ephemeral? }. Returns 201 with the client row; 409 if the name already exists.',
         'POST /api/api-keys body: { name, client_id }. The raw key is returned ONCE — deliver it to the client app immediately.',
-        'Creating admin keys via API is forbidden (session/WUI only). Rename/delete/revoke are session-only too.',
+        'DELETE /api/api-keys/{id} revokes CLIENT keys only (soft delete, immediate). Admin keys 403 — they are WUI-managed.',
+        'Creating admin keys via API is forbidden (session/WUI only). Renaming keys and deleting/renaming clients are session-only too.',
       ],
     });
   }

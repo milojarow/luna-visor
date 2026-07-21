@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.5.0',
+    version: '1.6.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -44,7 +44,7 @@ module.exports = {
     { name: 'Files', description: 'Upload, list, replace, move, copy, delete files. UUIDs are public identifiers.' },
     { name: 'Covers', description: 'Branded Instagram/Facebook images (1080×1920 / 1080×1350 / 1080×1080). Per-client branding registry.' },
     { name: 'Overlay', description: 'Transparent PNG overlays for video compositing (video-forge integration).' },
-    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Rename/revoke session-only.' },
+    { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Revoke: session, or admin key (client keys only). Rename: session-only.' },
   ],
 
   components: {
@@ -822,9 +822,9 @@ module.exports = {
       },
       delete: {
         tags: ['ApiKeys'],
-        summary: 'Revoke an API key (soft delete).',
-        description: 'Sets `revoked_at = now()`. The row is preserved so `files.api_key_id` references stay resolvable. Revoked keys 401 on subsequent requests.',
-        security: [{ cookieAuth: [] }],
+        summary: 'Revoke an API key (soft delete). Session or admin key (client keys only).',
+        description: 'Sets `revoked_at = now()`. The row is preserved so `files.api_key_id` references stay resolvable. Revoked keys 401 on subsequent requests. Admin-key callers can revoke CLIENT keys only — revoking an admin key (including your own) returns 403; admin keys are WUI-managed.',
+        security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         responses: {
           200: { description: 'Revoked.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Ok' } } } },
           401: { $ref: '#/components/responses/Unauthorized' },

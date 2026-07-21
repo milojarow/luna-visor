@@ -69,7 +69,18 @@ router.patch('/:id', requireSession, (req, res) => {
   res.json({ ok: true });
 });
 
-router.delete('/:id', requireSession, (req, res) => {
+router.delete('/:id', requireSessionOrAdmin, (req, res) => {
+  // Admin keys may revoke client keys only — admin keys stay WUI-managed
+  // (no self-lockout, no horizontal takeover).
+  if (req.authMethod === 'api-key') {
+    const target = db.prepare('SELECT is_admin FROM api_keys WHERE id = ?').get(req.params.id);
+    if (!target) {
+      return res.status(404).json({ error: 'API key not found or already revoked' });
+    }
+    if (target.is_admin) {
+      return res.status(403).json({ error: 'Admin keys can only be revoked from the WUI (session)' });
+    }
+  }
   const result = db.prepare(
     "UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL"
   ).run(req.params.id);

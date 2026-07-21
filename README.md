@@ -180,11 +180,11 @@ Both layouts coexist in [`src/services/cover-generator.js`](src/services/cover-g
 **API keys** (create+list: session or admin key; rename/revoke: session only)
 - `GET /api/api-keys` — list (with client names, `is_admin`, and `revoked_at`). Active keys come first, revoked ones last.
 - `POST /api/api-keys` — create, returns the raw key **once**; store it immediately. Body `{ name, client_id }`, or `{ name, is_admin: true }` for an admin key (**session only** — API-key callers get 403, so an admin key can never mint another admin key).
-- `DELETE /api/api-keys/:id` — soft delete (sets `revoked_at` instead of removing the row). The key stops authenticating immediately, but the row sticks around so files uploaded by it still resolve to its name in `GET /files`. There is no "undelete".
+- `DELETE /api/api-keys/:id` — soft delete (sets `revoked_at` instead of removing the row). Session, or admin key (**client keys only** — revoking an admin key via API returns 403). The key stops authenticating immediately, but the row sticks around so files uploaded by it still resolve to its name in `GET /files`. There is no "undelete".
 
 API key header: `X-API-Key: <raw-key>`. Client-scoped keys are tied to a single `client_id` — they can upload to, replace, delete, and generate covers from files of that client only.
 
-**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can **only** create and list clients and API keys — the full onboarding flow (create client → mint its key → hand the key to the app) with zero WUI involvement. They cannot touch files, covers, or overlays (explicit 403), cannot rename/delete/revoke anything, and cannot mint more admin keys. The agent adds; the human removes. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
+**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can create and list clients and API keys, and **revoke client keys** — the full key lifecycle (create client → mint its key → hand the key to the app → revoke it when rotated out) with zero WUI involvement. They cannot touch files, covers, or overlays (explicit 403), cannot rename anything or delete clients, cannot mint more admin keys, and cannot revoke admin keys (including themselves) — admin keys are WUI-managed, so a leaked admin key can never lock the human out. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
 
 ## Storage standard
 
