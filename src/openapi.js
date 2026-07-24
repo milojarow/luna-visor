@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.7.0',
+    version: '1.8.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -14,10 +14,15 @@ module.exports = {
       '',
       'Two methods, checked in this order:',
       '',
-      '1. **`X-API-Key` header** — server-to-server. Each key is bound to a single `client_id` and may upload, replace, delete files owned by that client, and generate covers/overlays. Keys are SHA-256 hashed at rest; the raw value is returned once at creation. Revoked keys (soft-delete) return 401.',
+      '1. **`X-API-Key` header** — server-to-server. Two kinds:',
+      '   - **Client-scoped** (`is_admin=0`): bound to a single `client_id`. Lists and reads that client\'s files, uploads, replaces, deletes them, and generates covers/overlays. Never sees another client\'s files.',
+      '   - **Admin** (`is_admin=1`, `client_id` NULL): onboarding and key lifecycle (create/rename clients, mint/rename/revoke client keys), plus **read-only cross-client access to files** — `GET /files` and `GET /files/{id}` over every client. Every file-writing endpoint returns 403.',
+      '   Keys are SHA-256 hashed at rest; the raw value is returned once at creation. Revoked keys (soft-delete) return 401.',
       '2. **Session cookie** (`connect.sid`, HttpOnly, 7-day) — for the WUI admin at https://luna.solutions45.com. Full access to all endpoints.',
       '',
       'Endpoints marked `apiKeyAuth OR cookieAuth` accept either. Endpoints marked `cookieAuth` only return **403** to API-key callers.',
+      '',
+      'Call `GET /me` with your key to get the exact endpoint list and body shapes for that key — no filtering of this spec by hand.',
       '',
       '## File storage standard',
       '',
@@ -41,7 +46,7 @@ module.exports = {
     { name: 'Discovery', description: 'API metadata (this spec).' },
     { name: 'Auth', description: 'Session login/logout/status.' },
     { name: 'Clients', description: 'Logical owners of files. Create/list/rename accept session or admin key; delete is session-only.' },
-    { name: 'Files', description: 'Upload, list, replace, move, copy, delete files. UUIDs are public identifiers.' },
+    { name: 'Files', description: 'Upload, list, replace, move, copy, delete files. UUIDs are public identifiers. Listing/reading is scoped by caller: client keys see only their own vault, admin keys read across all clients, session sees everything.' },
     { name: 'Covers', description: 'Branded Instagram/Facebook images (1080×1920 / 1080×1350 / 1080×1080). Per-client branding registry.' },
     { name: 'Overlay', description: 'Transparent PNG overlays for video compositing (video-forge integration).' },
     { name: 'ApiKeys', description: 'Manage server-to-server credentials. Create+list accept session or admin key; admin keys themselves are mintable only via session. Rename/revoke: session, or admin key (client keys only — admin-key targets are WUI-managed).' },
@@ -53,7 +58,7 @@ module.exports = {
         type: 'apiKey',
         in: 'header',
         name: 'X-API-Key',
-        description: 'Server-to-server credential. Client-scoped keys operate on files; admin keys (is_admin=1) create clients and mint client keys. Soft-revocable.',
+        description: 'Server-to-server credential. Client-scoped keys read and write files within their own client; admin keys (is_admin=1) create clients, mint client keys, and read files across all clients (read-only — every file write is 403). Soft-revocable.',
       },
       cookieAuth: {
         type: 'apiKey',
@@ -123,6 +128,27 @@ module.exports = {
         description: 'Response shape returned to API-key callers on upload/replace/cover. Internal IDs are not exposed.',
         properties: {
           cdn_url: { type: 'string', format: 'uri', example: 'https://cdn.solutions45.com/2d310796-1022-44ab-98c3-17485f80966f.webp' },
+        },
+      },
+
+      FileKeyView: {
+        type: 'object',
+        required: ['id', 'cdn_url', 'client_id', 'extension', 'mime_type', 'type'],
+        description: 'Response shape returned to API-key callers on GET /files and GET /files/{id}. Upload attribution (`api_key_id`, `api_key_name`, `api_key_revoked_at`) is internal audit metadata and is never exposed to API-key callers — use session auth (the WUI) for that.',
+        properties: {
+          id: { type: 'string', format: 'uuid', example: '2d310796-1022-44ab-98c3-17485f80966f' },
+          cdn_url: { type: 'string', format: 'uri', example: 'https://cdn.solutions45.com/2d310796-1022-44ab-98c3-17485f80966f.webp' },
+          client_id: { type: 'integer', example: 6 },
+          client_name: { type: 'string', example: 'tacos-elcamioncito', description: 'Present for ADMIN keys only — client-scoped keys already know their own client.' },
+          original_name: { type: 'string', example: 'beach-photo' },
+          extension: { type: 'string', example: 'webp' },
+          mime_type: { type: 'string', example: 'image/webp' },
+          size_bytes: { type: 'integer', example: 184523 },
+          type: { type: 'string', enum: ['image', 'video', 'audio', 'vector', 'lottie'], example: 'image' },
+          has_thumbnail: { type: 'integer', enum: [0, 1], example: 0, description: '1 if a -thumb.jpg variant exists (videos).' },
+          has_resized: { type: 'integer', enum: [0, 1], example: 1, description: '1 if image variants (-thumb.webp, -md.webp) exist.' },
+          referenced: { type: 'integer', enum: [0, 1], example: 1, description: '1 once the CDN log scanner has seen this file fetched.' },
+          created_at: { type: 'string', format: 'date-time' },
         },
       },
 
@@ -539,13 +565,42 @@ module.exports = {
     '/files': {
       get: {
         tags: ['Files'],
-        summary: 'List files, optionally filtered by client.',
-        security: [{ cookieAuth: [] }],
+        summary: 'List files. Scope is derived from the caller.',
+        description: [
+          'Ordered by `created_at` DESC. **The result set is scoped by who is asking** — a client-scoped key can never enumerate another client\'s vault:',
+          '',
+          '| Caller | Sees | Response schema |',
+          '|---|---|---|',
+          '| Client-scoped key | Only its own client\'s files. `client_id` is implicit; passing a foreign one is **403**, never a silent re-scope | `FileKeyView` |',
+          '| Admin key | Every client\'s files, each row carrying `client_id` + `client_name`. Optional `?client_id=N` filter | `FileKeyView` (with `client_name`) |',
+          '| Session | Every client\'s files, optional `?client_id=N` filter | `File` (full row, incl. upload attribution) |',
+          '',
+          '`limit`/`offset` are **optional with no default** — omit both and you get the complete set.',
+        ].join('\n'),
+        security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
         parameters: [
-          { name: 'client_id', in: 'query', required: false, schema: { type: 'integer' }, description: 'Filter to a single client.' },
+          { name: 'client_id', in: 'query', required: false, schema: { type: 'integer' }, description: 'Filter to a single client. Ignored-and-enforced for client-scoped keys: omit it, or pass your own (a foreign value returns 403).' },
+          { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 500 }, description: 'Max rows to return. Values above 500 are capped. Omit for no limit.' },
+          { name: 'offset', in: 'query', required: false, schema: { type: 'integer', minimum: 0 }, description: 'Rows to skip. Usable on its own (no limit needed).' },
         ],
         responses: {
-          200: { description: 'Array of files ordered by created_at DESC.', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/File' } } } } },
+          200: {
+            description: 'Array of files ordered by created_at DESC. Shape depends on auth method (see table above).',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    oneOf: [
+                      { $ref: '#/components/schemas/FileKeyView' },
+                      { $ref: '#/components/schemas/File' },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: '#/components/responses/BadRequest' },
           401: { $ref: '#/components/responses/Unauthorized' },
           403: { $ref: '#/components/responses/Forbidden' },
         },
@@ -621,9 +676,22 @@ module.exports = {
       get: {
         tags: ['Files'],
         summary: 'Get a single file.',
-        security: [{ cookieAuth: [] }],
+        description: 'Client-scoped keys may only read their own client\'s files (403 otherwise). Admin keys read any file (read-only) and additionally get `client_name`. Session callers get the full `File` row including upload attribution.',
+        security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
         responses: {
-          200: { description: 'File object.', content: { 'application/json': { schema: { $ref: '#/components/schemas/File' } } } },
+          200: {
+            description: 'File object. `FileKeyView` for API-key callers, full `File` for session callers.',
+            content: {
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/FileKeyView' },
+                    { $ref: '#/components/schemas/File' },
+                  ],
+                },
+              },
+            },
+          },
           401: { $ref: '#/components/responses/Unauthorized' },
           403: { $ref: '#/components/responses/Forbidden' },
           404: { $ref: '#/components/responses/NotFound' },

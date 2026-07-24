@@ -29,9 +29,13 @@ router.get('/', (req, res) => {
         'POST /api/api-keys',
         'PATCH /api/api-keys/{id}',
         'DELETE /api/api-keys/{id}',
+        'GET /api/files',
+        'GET /api/files/{id}',
       ],
       notes: [
         'Admin key: onboarding + key lifecycle — create/rename clients, mint/rename/revoke client-scoped keys. File operations require a client-scoped key.',
+        'GET /api/files and GET /api/files/{id} are READ-ONLY and cross-client: every file of every client, each row carrying client_id + client_name. Filter with ?client_id=N; page with ?limit=&offset= (both optional, no default).',
+        'Writing files is closed to admin keys: upload, replace, delete, copy, move and cover generation all return 403. Mint a client-scoped key for that.',
         'POST /api/clients body: { name, is_ephemeral? }. Returns 201 with the client row; 409 if the name already exists.',
         'PATCH /api/clients/{id} body: { name }. Renames the client (slug re-derives); 409 on name collision.',
         'POST /api/api-keys body: { name, client_id }. The raw key is returned ONCE — deliver it to the client app immediately.',
@@ -72,6 +76,8 @@ router.get('/', (req, res) => {
 
   const coverEndpoints = (brand.formats || []).map(f => `POST /api/files/{id}/${f}`);
   const callable = [
+    'GET /api/files',
+    'GET /api/files/{id}',
     'POST /api/files/upload',
     'POST /api/files/{id}/replace',
     'DELETE /api/files/{id}',
@@ -80,6 +86,7 @@ router.get('/', (req, res) => {
   ];
 
   const notes = [
+    'GET /api/files lists this client\'s vault and nothing else — the scope comes from the key, so no client_id is needed (and a foreign one is rejected). Page with ?limit=&offset= (both optional, no default). GET /api/files/{id} returns one file, 403 if it belongs to another client.',
     'cdn_url returned from upload/cover endpoints is always public (https://cdn.solutions45.com/<uuid>.<ext>).',
     isMinimal
       ? 'Cover endpoint accepts body `{}` (defaults to top-right) or `{position: "..."}` to choose a corner. Source dimensions are preserved.'

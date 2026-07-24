@@ -60,9 +60,11 @@ app.use(requireAuth);
 // Protected static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API routes — clients/api-keys guard per-route (create+list open to admin keys)
+// API routes — clients/api-keys guard per-route (create+list open to admin keys).
+// files guards internally: read routes allow admin keys, then a blockAdminKeys barrier
+// closes every write route below it (see src/routes/files.js).
 app.use('/api/clients', require('./src/routes/clients'));
-app.use('/api/files', blockAdminKeys, require('./src/routes/files'));
+app.use('/api/files', require('./src/routes/files'));
 app.use('/api/api-keys', require('./src/routes/api-keys'));
 app.use('/api/overlay', blockAdminKeys, require('./src/routes/overlay'));
 app.use('/api/me', require('./src/routes/me'));

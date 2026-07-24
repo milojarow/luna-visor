@@ -7,7 +7,7 @@ const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
 const { generateCover, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
-const { requireSession } = require('../middleware/auth');
+const { requireSession, blockAdminKeys } = require('../middleware/auth');
 const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
 const upload = multer({
@@ -50,34 +50,118 @@ function fileToResponse(file) {
   return { ...file, cdn_url: cdnUrl };
 }
 
-router.get('/', requireSession, (req, res) => {
-  const { client_id } = req.query;
-  const where = client_id ? 'WHERE f.client_id = ?' : '';
-  const params = client_id ? [client_id] : [];
-  const files = db.prepare(`
-    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
-           c.is_ephemeral AS client_is_ephemeral
-    FROM files f
-    LEFT JOIN api_keys ak ON ak.id = f.api_key_id
-    LEFT JOIN clients c ON c.id = f.client_id
-    ${where}
-    ORDER BY f.created_at DESC
-  `).all(...params);
+// Projection for API-key callers. Built as an explicit allowlist, not a blocklist: internal
+// audit metadata (api_key_id / api_key_name / api_key_revoked_at) never reaches an external
+// caller, and a column added to the files table can't leak by accident.
+function fileToKeyResponse(file, includeClientName) {
+  if (!file) return null;
+  const out = {
+    id: file.id,
+    cdn_url: `${config.CDN_BASE_URL}/${file.id}.${file.extension}`,
+    client_id: file.client_id,
+  };
+  if (includeClientName) out.client_name = file.client_name;
+  out.original_name = file.original_name;
+  out.extension = file.extension;
+  out.mime_type = file.mime_type;
+  out.size_bytes = file.size_bytes;
+  out.type = file.type;
+  out.has_thumbnail = file.has_thumbnail;
+  out.has_resized = file.has_resized;
+  out.referenced = file.referenced;
+  out.created_at = file.created_at;
+  return out;
+}
+
+const FILE_SELECT = `
+  SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
+         c.name AS client_name, c.is_ephemeral AS client_is_ephemeral
+  FROM files f
+  LEFT JOIN api_keys ak ON ak.id = f.api_key_id
+  LEFT JOIN clients c ON c.id = f.client_id
+`;
+
+// Pagination is opt-in with no default: the WUI gallery fetches GET /api/files unbounded
+// (public/js/api.js), so any default cap would silently truncate it.
+function parsePaging(query) {
+  const paging = {};
+  if (query.limit !== undefined) {
+    const n = Number.parseInt(query.limit, 10);
+    if (!Number.isInteger(n) || n < 1) return { error: 'limit must be a positive integer' };
+    paging.limit = Math.min(n, 500);
+  }
+  if (query.offset !== undefined) {
+    const n = Number.parseInt(query.offset, 10);
+    if (!Number.isInteger(n) || n < 0) return { error: 'offset must be a non-negative integer' };
+    paging.offset = n;
+  }
+  return { paging };
+}
+
+// Read routes are open to session, client keys (scoped to their own vault) and admin keys
+// (cross-client, read-only). See the blockAdminKeys barrier below.
+router.get('/', (req, res) => {
+  const isKey = req.authMethod === 'api-key';
+  const isClientKey = isKey && !req.isAdminKey;
+
+  let scopeClientId = null;
+  if (req.query.client_id !== undefined) {
+    scopeClientId = Number.parseInt(req.query.client_id, 10);
+    if (!Number.isInteger(scopeClientId)) {
+      return res.status(400).json({ error: 'client_id must be an integer' });
+    }
+  }
+
+  if (isClientKey) {
+    // A client key is pinned to its own vault. An explicit foreign client_id is a 403 —
+    // never a silent re-scope that would make the caller think it saw everything.
+    if (scopeClientId !== null && scopeClientId !== req.apiKeyClientId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    scopeClientId = req.apiKeyClientId;
+  }
+
+  const { paging, error } = parsePaging(req.query);
+  if (error) return res.status(400).json({ error });
+
+  const params = [];
+  let sql = FILE_SELECT;
+  if (scopeClientId !== null) {
+    sql += ' WHERE f.client_id = ?';
+    params.push(scopeClientId);
+  }
+  sql += ' ORDER BY f.created_at DESC';
+  if (paging.limit !== undefined || paging.offset !== undefined) {
+    sql += ' LIMIT ? OFFSET ?';
+    params.push(paging.limit ?? -1, paging.offset ?? 0);
+  }
+
+  const files = db.prepare(sql).all(...params);
+  if (isKey) {
+    return res.json(files.map(f => fileToKeyResponse(f, req.isAdminKey)));
+  }
   res.json(files.map(fileToResponse));
 });
 
-router.get('/:id', requireSession, (req, res) => {
-  const file = db.prepare(`
-    SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
-           c.is_ephemeral AS client_is_ephemeral
-    FROM files f
-    LEFT JOIN api_keys ak ON ak.id = f.api_key_id
-    LEFT JOIN clients c ON c.id = f.client_id
-    WHERE f.id = ?
-  `).get(req.params.id);
+router.get('/:id', (req, res) => {
+  const file = db.prepare(`${FILE_SELECT} WHERE f.id = ?`).get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
+
+  const isKey = req.authMethod === 'api-key';
+  if (isKey && !req.isAdminKey && file.client_id !== req.apiKeyClientId) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  if (isKey) return res.json(fileToKeyResponse(file, req.isAdminKey));
   res.json(fileToResponse(file));
 });
+
+// ---------------------------------------------------------------------------
+// Barrier: every route defined BELOW this line is closed to admin keys (their
+// client_id is NULL — they have no vault to write into). Fail-closed by design:
+// a new route added below inherits the block without anyone remembering to.
+// Read routes that admin keys may reach go ABOVE this line, deliberately.
+// ---------------------------------------------------------------------------
+router.use(blockAdminKeys);
 
 router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res) => {
   const isApiKey = req.authMethod === 'api-key';
