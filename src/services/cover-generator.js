@@ -65,6 +65,23 @@ const iconTree = `
   <path d="M15 13c1-1.5 0.5-3.5-1-5" stroke="white" stroke-width="1" opacity="0.4" stroke-linecap="round" fill="none"/>
 `;
 
+const iconLaundry = `
+  <rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="white" stroke-width="1.8"/>
+  <line x1="4" y1="7.6" x2="20" y2="7.6" stroke="white" stroke-width="1.5"/>
+  <circle cx="7.2" cy="5.3" r="0.9" fill="white"/>
+  <circle cx="10.2" cy="5.3" r="0.9" fill="white"/>
+  <circle cx="12" cy="14.6" r="4.6" fill="none" stroke="white" stroke-width="1.8"/>
+  <path d="M9.2 14.6c0.9-0.9 1.9-0.9 2.8 0s1.9 0.9 2.8 0" fill="none" stroke="white" stroke-width="1.2" opacity="0.55" stroke-linecap="round"/>
+`;
+
+const iconFloors = `
+  <rect x="5" y="3" width="14" height="18" rx="1.2" fill="none" stroke="white" stroke-width="1.8"/>
+  <line x1="5" y1="9" x2="19" y2="9" stroke="white" stroke-width="1.3" opacity="0.65"/>
+  <line x1="5" y1="15" x2="19" y2="15" stroke="white" stroke-width="1.3" opacity="0.65"/>
+  <rect x="10.2" y="17.4" width="3.6" height="3.6" fill="none" stroke="white" stroke-width="1.2"/>
+  <path d="M3 21h18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+`;
+
 // ── Pill builder ──
 
 function pill(icon, value, label) {
@@ -103,15 +120,26 @@ function pill(icon, value, label) {
   };
 }
 
-function renderRow(pills, gap = 10) {
+function renderRow(pills, gap = 10, maxWidth = null) {
   let x = 0;
-  return pills
+  const body = pills
     .map((p) => {
       const s = p.svg(x);
       x += p.width + gap;
       return s;
     })
     .join("");
+
+  // The row is laid out left to right with nothing watching the right edge, so
+  // it simply ran off the canvas: four pills -- the shape real listings already
+  // send, with a parking spot -- overflowed by 76px and the last pill was
+  // clipped mid-shape in every video. Scaling the row keeps every pill whole
+  // and legible instead of silently amputating the tail of the list.
+  if (!maxWidth) return body;
+  const total = x - gap;
+  if (total <= maxWidth) return body;
+  const scale = maxWidth / total;
+  return `<g transform="scale(${scale.toFixed(4)})">${body}</g>`;
 }
 
 // ── Watermark builder ──
@@ -258,9 +286,11 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
     pill(iconToilet, data.bathrooms, "Baños"),
     pill(iconArea, data.area, ""),
   ];
+  if (data.floors) allPills.push(pill(iconFloors, String(data.floors), "Pisos"));
   if (data.amenities?.parking) allPills.push(pill(iconGarage, "", "Cochera"));
   if (data.amenities?.garden) allPills.push(pill(iconGarden, "", "Jardín"));
   if (data.amenities?.trees) allPills.push(pill(iconTree, "", "Árboles"));
+  if (data.amenities?.laundry) allPills.push(pill(iconLaundry, "", "Lavandería"));
 
   const bottomOffset = 100;
 
@@ -306,7 +336,7 @@ async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height
     </g>
 
     <g transform="translate(40, ${height - 80})">
-      ${renderRow(allPills)}
+      ${renderRow(allPills, 10, width - 80)}
     </g>
   </svg>
   `;
@@ -361,9 +391,11 @@ function buildOverlaySvg({ data, width, height, brand }) {
     bigPill(iconToilet, data.bathrooms, "Baños"),
     bigPill(iconArea, data.area, ""),
   ];
+  if (data.floors) allPills.push(bigPill(iconFloors, String(data.floors), "Pisos"));
   if (data.amenities?.parking) allPills.push(bigPill(iconGarage, "", "Cochera"));
   if (data.amenities?.garden) allPills.push(bigPill(iconGarden, "", "Jardín"));
   if (data.amenities?.trees) allPills.push(bigPill(iconTree, "", "Árboles"));
+  if (data.amenities?.laundry) allPills.push(bigPill(iconLaundry, "", "Lavandería"));
 
   const bottomOffset = 200;
 
@@ -408,7 +440,7 @@ function buildOverlaySvg({ data, width, height, brand }) {
     </g>
 
     <g transform="translate(40, ${height - 130})">
-      ${renderRow(allPills, 16)}
+      ${renderRow(allPills, 16, width - 80)}
     </g>
   </svg>
   `;
