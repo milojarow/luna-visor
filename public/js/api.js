@@ -58,6 +58,14 @@ const API = {
     });
   },
 
+  // Replace keeps the same UUID and the same cdn_url — that is the whole point:
+  // references living in someone else's database keep resolving.
+  replaceFile(id, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('POST', `/api/files/${id}/replace`, formData);
+  },
+
   getApiKeys() { return this.request('GET', '/api/api-keys'); },
   createApiKey(name, clientId, isAdmin = false) {
     return this.request('POST', '/api/api-keys', isAdmin ? { name, is_admin: true } : { name, client_id: clientId });

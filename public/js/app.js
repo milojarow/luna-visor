@@ -25,11 +25,24 @@ const App = {
   currentView: 'gallery',
   cdnBaseUrl: '',
 
+  // The server already refuses all of these to a partner. Hiding them is
+  // honesty, not security: the UI stops offering what would come back 403.
+  hideOwnerControls() {
+    for (const id of ['btn-add-client', 'btn-add-client-caret', 'btn-api-keys', 'dropup-add-client']) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = true;
+    }
+    const addWrap = document.querySelector('.sidebar-add-wrap');
+    if (addWrap) addWrap.hidden = true;
+  },
+
   async init() {
     const statusRes = await fetch('/api/auth/status');
     if (!statusRes.ok) return;
     const status = await statusRes.json();
     this.cdnBaseUrl = (status.cdn_base_url || '').replace(/\/$/, '');
+    this.role = status.role || 'admin';
+    if (this.role === 'partner') this.hideOwnerControls();
 
     ContextMenu.init();
     Lightbox.init();

@@ -110,7 +110,7 @@ const ApiKeysPage = {
             <span class="api-key-name-text">${escapeHtml(k.name)}</span>${renameBtn}
           </div>
           <div class="api-key-meta">
-            <span class="api-key-client">${clientLabel}</span>
+            <span class="api-key-client">${clientLabel}</span>${k.partner_name ? `<span class="api-key-partner-badge">socio: ${escapeHtml(k.partner_name)}</span>` : ''}
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-preview">…${k.key_preview}</span>
             <span class="api-key-meta-sep">·</span>

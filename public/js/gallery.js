@@ -155,7 +155,7 @@ const Gallery = {
           action: () => App.confirmBulkDelete(selectedFiles),
         },
       ];
-      ContextMenu.show(x, y, items);
+      ContextMenu.show(x, y, forRole(items));
       return;
     }
 
@@ -179,6 +179,23 @@ const Gallery = {
       },
       { separator: true },
       {
+        label: 'Replace file...',
+        action: () => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.onchange = async () => {
+            if (!input.files.length) return;
+            try {
+              await API.replaceFile(file.id, input.files[0]);
+              await App.loadFiles();
+            } catch (err) {
+              alert(`No se pudo reemplazar: ${err.message}`);
+            }
+          };
+          input.click();
+        },
+      },
+      {
         label: 'Move to...',
         action: () => App.showMoveDialog(file),
       },
@@ -193,12 +210,22 @@ const Gallery = {
         action: () => App.confirmDelete(file),
       },
     ];
-    ContextMenu.show(x, y, items);
+    ContextMenu.show(x, y, forRole(items));
   },
 };
 
+// Move and copy are owner-only on the server (requireSession). Drop them from
+// a partner's menu rather than offering a click that returns 403.
+function forRole(items) {
+  if (App.role !== 'partner') return items;
+  return items.filter(i => !/^(Move|Copy \d+ files)/.test(i.label || ''));
+}
+
 function formatSourceTooltip(file) {
   const lines = [file.original_name];
+  // A partner's rows carry no attribution at all — saying "via session" would
+  // be a claim we cannot make.
+  if (App.role === 'partner') return lines.join('\n');
   if (file.api_key_name) {
     const revoked = file.api_key_revoked_at ? ' (revoked)' : '';
     lines.push(`Uploaded via API key: ${file.api_key_name}${revoked}`);

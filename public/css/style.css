@@ -1188,3 +1188,14 @@ body.lightbox-open {
   margin-top: 0.6rem;
   color: var(--accent);
 }
+
+/* A key hung on a partner: that partner reaches this client's vault through
+   the /socios page, so it needs to be visible at a glance. */
+.api-key-partner-badge {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #2d3748;
+  color: #a0aec0;
+  margin-left: 0.5rem;
+}
