@@ -51,6 +51,25 @@ app.use('/api/auth/login', loginLimiter);
 // Auth routes (before auth middleware)
 app.use('/api/auth', require('./src/routes/auth'));
 
+// Partner door. One URL: not authenticated it serves the password screen,
+// authenticated it serves the very same index.html the owner uses.
+// Its own limiter instance, so a partner under attack can't lock the owner out.
+const partnerLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, try again later.' },
+});
+app.use('/api/partner/login', partnerLoginLimiter);
+app.use('/api/partner', require('./src/routes/partner'));
+
+app.get('/socios', (req, res) => {
+  const page = (req.session && req.session.partnerId) ? 'index.html' : 'socios.html';
+  res.sendFile(path.join(__dirname, 'public', page));
+});
+
 // Public OpenAPI 3.0.3 spec (before auth middleware)
 app.use('/api', require('./src/routes/openapi'));
 

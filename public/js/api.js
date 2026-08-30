@@ -9,7 +9,9 @@ const API = {
     }
     const res = await fetch(path, opts);
     if (res.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = window.location.pathname.startsWith('/socios')
+        ? '/socios'
+        : '/login.html';
       return null;
     }
     const data = await res.json();
