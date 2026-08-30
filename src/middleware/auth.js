@@ -53,4 +53,19 @@ function blockAdminKeys(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireSession, requireSessionOrAdmin, blockAdminKeys };
+// Which client_ids may this caller touch?
+//   null  → unrestricted (owner session; admin keys for reads — their writes
+//           are already stopped by the blockAdminKeys barrier in files.js)
+//   array → exactly these client_ids
+// An identity nobody taught this function about gets [] — it sees nothing
+// rather than everything. Same fail-closed discipline as the barrier.
+function callerScope(req) {
+  if (req.authMethod === 'session') return null;
+  if (req.authMethod === 'partner') return req.scopeClientIds || [];
+  if (req.authMethod === 'api-key') {
+    return req.isAdminKey ? null : [req.apiKeyClientId];
+  }
+  return [];
+}
+
+module.exports = { requireAuth, requireSession, requireSessionOrAdmin, blockAdminKeys, callerScope };

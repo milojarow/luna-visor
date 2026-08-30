@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { generateOverlay } = require('../services/cover-generator');
+const { callerScope } = require('../middleware/auth');
 
 const router = Router();
 
@@ -19,6 +20,14 @@ router.post('/generate', overlayLimiter, async (req, res) => {
 
   if (!clientId) {
     return res.status(400).json({ error: 'client_id required' });
+  }
+
+  // This route reads client_id straight off the body when the caller has no
+  // apiKeyClientId — which is every non-key identity. Without this check a
+  // partner could render an overlay in any client's branding.
+  const scope = callerScope(req);
+  if (scope && !scope.includes(Number.parseInt(clientId, 10))) {
+    return res.status(403).json({ error: 'Access denied' });
   }
 
   try {
