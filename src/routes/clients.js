@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const db = require('../db/connection');
-const { requireSession, requireSessionOrAdmin } = require('../middleware/auth');
+const { requireSession, requireSessionOrAdmin, requireClientListAccess, callerScope } = require('../middleware/auth');
 
 const router = Router();
 
@@ -8,14 +8,23 @@ function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-router.get('/', requireSessionOrAdmin, (_req, res) => {
+router.get('/', requireClientListAccess, (req, res) => {
+  const scope = callerScope(req);
+  const params = [];
+  let where = '';
+  if (scope) {
+    if (!scope.length) return res.json([]);
+    where = `WHERE c.id IN (${scope.map(() => '?').join(',')})`;
+    params.push(...scope);
+  }
   const clients = db.prepare(`
     SELECT c.*, COUNT(f.id) as file_count
     FROM clients c
     LEFT JOIN files f ON f.client_id = c.id
+    ${where}
     GROUP BY c.id
     ORDER BY c.name
-  `).all();
+  `).all(...params);
   res.json(clients);
 });
 

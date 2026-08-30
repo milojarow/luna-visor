@@ -79,6 +79,15 @@ function requireSessionOrAdmin(req, res, next) {
   return res.status(403).json({ error: 'Session or admin API key required' });
 }
 
+// The client list is the partner's sidebar, so it admits partners too.
+// Client-scoped keys stay out, exactly as before.
+function requireClientListAccess(req, res, next) {
+  if (req.authMethod === 'session') return next();
+  if (req.authMethod === 'partner') return next();
+  if (req.authMethod === 'api-key' && req.isAdminKey) return next();
+  return res.status(403).json({ error: 'Session, admin API key or partner required' });
+}
+
 function blockAdminKeys(req, res, next) {
   if (req.authMethod === 'api-key' && req.isAdminKey) {
     return res.status(403).json({ error: 'Admin keys cannot access file endpoints; use a client-scoped key' });
@@ -101,4 +110,12 @@ function callerScope(req) {
   return [];
 }
 
-module.exports = { requireAuth, requireSession, requireSessionOrAdmin, blockAdminKeys, callerScope, partnerScope };
+module.exports = {
+  requireAuth,
+  requireSession,
+  requireSessionOrAdmin,
+  requireClientListAccess,
+  blockAdminKeys,
+  callerScope,
+  partnerScope,
+};
