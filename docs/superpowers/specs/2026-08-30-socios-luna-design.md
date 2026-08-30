@@ -172,14 +172,23 @@ Los ocho puntos pasan a `callerScope`. Detalles que no son mecánicos:
 
 - **`GET /`** — con scope no-nulo: `WHERE client_id IN (...)`. Un `?client_id=` fuera del scope
   sigue dando **403**, nunca un re-scope silencioso (invariante ya establecido en el proyecto).
-- **`POST /upload`** — `client_id = req.body.client_id ?? (scope?.length === 1 ? scope[0] : null)`,
-  validado contra el scope.
+- **`POST /upload`** — sin cambio de contrato para nadie. La forma que lo logra:
 
-  > **Cambio de contrato, deliberado:** hoy una client key que mande un `client_id` ajeno en el
-  > body lo ve **ignorado en silencio** (sube a la suya). Después: **403**. Es más estricto y más
-  > honesto, pero es un cambio. Antes de implementar hay que grepear los consumidores conocidos
-  > (video-forge, backends de clientes) para confirmar que ninguno manda `client_id` en el
-  > multipart. Si alguno lo manda, se conserva el comportamiento viejo para `authMethod==='api-key'`.
+  ```js
+  const scope = callerScope(req);           // null | number[]
+  let client_id;
+  if (scope === null)            client_id = req.body.client_id;          // sesión: como hoy
+  else if (scope.length === 1)   client_id = scope[0];                    // client key: body ignorado, como hoy
+  else {                                                                   // socio con varias bóvedas
+    client_id = Number(req.body.client_id);
+    if (!scope.includes(client_id)) return res.status(403).json({ error: 'Access denied' });
+  }
+  ```
+
+  Verificado el 2026-08-30 contra el único consumidor conocido: `video-forge/src/services/cdn.py`
+  manda sólo `files=`, sin `client_id`. Y con esta forma daría igual — la rama de client key
+  sigue ignorando el body exactamente como hoy.
+
 - **Atribución** — `saveFile(..., api_key_id)` recibe `req.partnerKeyByClient[client_id]` cuando
   el caller es socio, en vez de `null`.
 
