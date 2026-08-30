@@ -6,7 +6,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
-const { generateCover, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
+const { generateCover, generateWatermark, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
 const { requireSession, blockAdminKeys, callerScope } = require('../middleware/auth');
 const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
@@ -325,6 +325,42 @@ router.post('/:id/story', coverLimiter, (req, res) => handleCoverGeneration(req,
 router.post('/:id/cover', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'cover', 1080, 1350));
 router.post('/:id/square', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'square', 1080, 1080));
 router.post('/:id/fb', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'fb', 1080, 1080));
+
+// Watermark anti-robo. A diferencia de los covers, PRESERVA las dimensiones del
+// original — no hay width/height fijos porque el pool mezcla 1080x1350 y 1080x1080.
+// El resultado se guarda como archivo NUEVO (UUID nuevo): el master queda intacto.
+router.post('/:id/watermark', coverLimiter, async (req, res) => {
+  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+  if (!file) return res.status(404).json({ error: 'File not found' });
+  const scope = callerScope(req);
+  if (scope && !scope.includes(file.client_id)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  if (file.type !== 'image') {
+    return res.status(400).json({ error: 'Source file must be an image' });
+  }
+
+  const brand = getBranding(file.client_id);
+  if (!brand.formats.includes('watermark')) {
+    return res.status(400).json({ error: "Format 'watermark' not supported for this client" });
+  }
+
+  const sourcePath = path.join(config.MEDIA_FILES_PATH, `${file.id}.${file.extension}`);
+  const sourceBuffer = fs.readFileSync(sourcePath);
+  const out = await generateWatermark({ sourceBuffer, brand, opts: req.body || {} });
+
+  const tmpPath = path.join('/tmp/luna-visor-uploads/', `watermark-${file.id}.webp`);
+  fs.writeFileSync(tmpPath, out);
+  const outName = `wm-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
+  const saved = await saveFile(tmpPath, outName, 'image/webp', out.length, file.client_id, apiKeyIdFor(req, file.client_id));
+
+  const response = fileToResponse(saved);
+  if (req.authMethod === 'api-key') {
+    return res.status(201).json({ cdn_url: response.cdn_url });
+  }
+  if (req.authMethod === 'partner') return res.status(201).json(stripAttribution(response));
+  res.status(201).json(response);
+});
 
 router.delete('/:id', (req, res) => {
   const scope = callerScope(req);

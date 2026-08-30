@@ -272,6 +272,127 @@ async function generateMinimalCover({ sourceBuffer, brand, position = 'top-right
     .toBuffer();
 }
 
+// ── Watermark anti-robo ──
+//
+// Marca defensiva para piezas que se publican en redes: mosaico diagonal sobre
+// TODA la imagen + logo del cliente sobre el sujeto. Preserva las dimensiones
+// del original (el pool trae 1080x1350 y 1080x1080 mezclados).
+//
+// Va en blanco con sombra, no en el color de marca: el logo de un cliente suele
+// ser de tinta fina y a opacidad de watermark se disuelve sobre comida o sobre
+// cualquier fondo oscuro. Blanco + sombra lee sobre claro Y sobre oscuro.
+
+function clamp01(v, fallback) {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+}
+
+/**
+ * Paso del mosaico. DEBE superar el ancho del texto o el patrón lo corta a
+ * media palabra ("CAMIOIFLAUTAS") — el tile se repite encima de sí mismo.
+ * 0.62em por carácter es cota alta para Inter Bold en mayúsculas.
+ */
+function tileStepFor(text, fontSize, letterSpacing) {
+  const advance = text.length * (fontSize * 0.62 + letterSpacing);
+  return Math.ceil(advance * 1.35);
+}
+
+/** Mosaico diagonal repetido. Blanco con contorno negro: lee en claro y en oscuro. */
+function buildTiledWatermark(width, height, text, font, fontSize, opacity) {
+  if (!text) return '';
+  const letterSpacing = 2;
+  const step = tileStepFor(text, fontSize, letterSpacing);
+  return `<defs>
+    <pattern id="wm-tile" width="${step}" height="${Math.round(step * 0.62)}"
+             patternUnits="userSpaceOnUse" patternTransform="rotate(-30)">
+      <text x="0" y="${Math.round(step * 0.42)}" font-family="${font}"
+            font-size="${fontSize}" font-weight="700" letter-spacing="${letterSpacing}"
+            fill="#ffffff" fill-opacity="${opacity}"
+            stroke="#000000" stroke-opacity="${opacity * 0.55}" stroke-width="1.1"
+            paint-order="stroke">${escapeXml(text)}</text>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#wm-tile)"/>`;
+}
+
+/**
+ * Logo recoloreado a blanco (conservando su alpha) sobre una sombra oscura
+ * difusa. La sombra es lo que lo hace legible sobre fondos claros.
+ */
+async function whiteLogoWithShadow(logoPath, sizePx, opacity) {
+  const { data, info } = await sharp(logoPath)
+    .resize(sizePx, sizePx, { fit: 'inside' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const blanco = Buffer.from(data);
+  const sombra = Buffer.from(data);
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    blanco[i] = blanco[i + 1] = blanco[i + 2] = 255;
+    blanco[i + 3] = Math.round(a * opacity);
+    sombra[i] = sombra[i + 1] = sombra[i + 2] = 0;
+    sombra[i + 3] = Math.round(a * opacity * 0.85);
+  }
+
+  const raw = { width: info.width, height: info.height, channels: 4 };
+  const pad = 12;
+  const extend = { top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } };
+
+  const capaSombra = await sharp(sombra, { raw }).blur(7).extend(extend).png().toBuffer();
+  const capaBlanca = await sharp(blanco, { raw }).extend(extend).png().toBuffer();
+  return sharp(capaSombra).composite([{ input: capaBlanca }]).png().toBuffer();
+}
+
+/**
+ * `logoCx`/`logoCy` son fracciones 0..1 del ancho/alto — el llamador decide
+ * dónde cae el sujeto (luna no sabe dónde está el platillo). Default: centro.
+ */
+async function generateWatermark({ sourceBuffer, brand, opts = {} }) {
+  const meta = await sharp(sourceBuffer).metadata();
+  const width = meta.width;
+  const height = meta.height;
+
+  const wm = brand.watermark || {};
+  const text = opts.text || wm.text || brand.watermarkText || '';
+  const font = brand.watermarkFont || "'Inter', sans-serif";
+  const fontSize = Math.max(12, Math.round((wm.fontSize ?? 28) * (width / 1080)));
+  const patternOpacity = clamp01(opts.pattern_opacity ?? wm.patternOpacity, 0.30);
+  const logoWidthPct = clamp01(opts.logo_width_pct ?? wm.logoWidthPct, 0.34);
+  const logoOpacity = clamp01(opts.logo_opacity ?? wm.logoOpacity, 0.60);
+
+  const composites = [];
+
+  const patternSvg = buildTiledWatermark(width, height, text, font, fontSize, patternOpacity);
+  if (patternSvg) {
+    composites.push({
+      input: Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${patternSvg}</svg>`),
+      top: 0,
+      left: 0,
+    });
+  }
+
+  if (brand.logoImagePath && logoWidthPct > 0 && logoOpacity > 0) {
+    const size = Math.round(width * logoWidthPct);
+    const logo = await whiteLogoWithShadow(brand.logoImagePath, size, logoOpacity);
+    const lm = await sharp(logo).metadata();
+    const cx = clamp01(opts.logo_cx, 0.5) * width;
+    const cy = clamp01(opts.logo_cy, 0.5) * height;
+    composites.push({
+      input: logo,
+      left: Math.max(0, Math.min(width - lm.width, Math.round(cx - lm.width / 2))),
+      top: Math.max(0, Math.min(height - lm.height, Math.round(cy - lm.height / 2))),
+    });
+  }
+
+  return sharp(sourceBuffer, { failOn: 'error', limitInputPixels: 50_000_000, sequentialRead: true })
+    .timeout({ seconds: 30 })
+    .composite(composites)
+    .webp({ quality: 88, effort: 6 })
+    .toBuffer();
+}
+
 // ── Main generator ──
 
 async function generateCover({ sourceBuffer, data, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT, clientId }) {
@@ -457,4 +578,4 @@ async function generateOverlay({ data, width = 1080, height = 1920, clientId }) 
     .toBuffer();
 }
 
-module.exports = { generateCover, generateOverlay, getBranding, MINIMAL_LOGO_POSITIONS };
+module.exports = { generateCover, generateOverlay, generateWatermark, getBranding, MINIMAL_LOGO_POSITIONS };
