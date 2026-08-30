@@ -7,7 +7,7 @@ const db = require('../db/connection');
 const config = require('../config');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
 const { generateCover, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
-const { requireSession, blockAdminKeys } = require('../middleware/auth');
+const { requireSession, blockAdminKeys, callerScope } = require('../middleware/auth');
 const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
 const upload = multer({
@@ -73,6 +73,27 @@ function fileToKeyResponse(file, includeClientName) {
   return out;
 }
 
+// The partner UI is the owner's own gallery, so it needs the full row. Upload
+// attribution is the exception: api_key_name spells out internal tooling names
+// and stays session-only.
+function stripAttribution(obj) {
+  if (!obj) return obj;
+  const { api_key_id, api_key_name, api_key_revoked_at, ...rest } = obj;
+  return rest;
+}
+
+function fileToPartnerResponse(file) {
+  return stripAttribution(fileToResponse(file));
+}
+
+// The api_keys row a write should be attributed to. A partner acts through a
+// real key — the one that granted it that vault — so attribution stays honest.
+function apiKeyIdFor(req, clientId) {
+  if (req.authMethod === 'api-key') return req.apiKeyId;
+  if (req.authMethod === 'partner') return req.partnerKeyByClient?.[clientId] ?? null;
+  return null;
+}
+
 const FILE_SELECT = `
   SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
          c.name AS client_name, c.is_ephemeral AS client_is_ephemeral
@@ -101,8 +122,7 @@ function parsePaging(query) {
 // Read routes are open to session, client keys (scoped to their own vault) and admin keys
 // (cross-client, read-only). See the blockAdminKeys barrier below.
 router.get('/', (req, res) => {
-  const isKey = req.authMethod === 'api-key';
-  const isClientKey = isKey && !req.isAdminKey;
+  const scope = callerScope(req);
 
   let scopeClientId = null;
   if (req.query.client_id !== undefined) {
@@ -112,13 +132,10 @@ router.get('/', (req, res) => {
     }
   }
 
-  if (isClientKey) {
-    // A client key is pinned to its own vault. An explicit foreign client_id is a 403 —
-    // never a silent re-scope that would make the caller think it saw everything.
-    if (scopeClientId !== null && scopeClientId !== req.apiKeyClientId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    scopeClientId = req.apiKeyClientId;
+  // A scoped caller asking for a vault outside its scope gets a 403 — never a
+  // silent re-scope, which would let it believe it had seen everything.
+  if (scope && scopeClientId !== null && !scope.includes(scopeClientId)) {
+    return res.status(403).json({ error: 'Access denied' });
   }
 
   const { paging, error } = parsePaging(req.query);
@@ -129,6 +146,10 @@ router.get('/', (req, res) => {
   if (scopeClientId !== null) {
     sql += ' WHERE f.client_id = ?';
     params.push(scopeClientId);
+  } else if (scope) {
+    if (!scope.length) return res.json([]);   // an empty IN () is a syntax error
+    sql += ` WHERE f.client_id IN (${scope.map(() => '?').join(',')})`;
+    params.push(...scope);
   }
   sql += ' ORDER BY f.created_at DESC';
   if (paging.limit !== undefined || paging.offset !== undefined) {
@@ -137,7 +158,8 @@ router.get('/', (req, res) => {
   }
 
   const files = db.prepare(sql).all(...params);
-  if (isKey) {
+  if (req.authMethod === 'partner') return res.json(files.map(fileToPartnerResponse));
+  if (req.authMethod === 'api-key') {
     return res.json(files.map(f => fileToKeyResponse(f, req.isAdminKey)));
   }
   res.json(files.map(fileToResponse));
@@ -147,11 +169,12 @@ router.get('/:id', (req, res) => {
   const file = db.prepare(`${FILE_SELECT} WHERE f.id = ?`).get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
 
-  const isKey = req.authMethod === 'api-key';
-  if (isKey && !req.isAdminKey && file.client_id !== req.apiKeyClientId) {
+  const scope = callerScope(req);
+  if (scope && !scope.includes(file.client_id)) {
     return res.status(403).json({ error: 'Access denied' });
   }
-  if (isKey) return res.json(fileToKeyResponse(file, req.isAdminKey));
+  if (req.authMethod === 'partner') return res.json(fileToPartnerResponse(file));
+  if (req.authMethod === 'api-key') return res.json(fileToKeyResponse(file, req.isAdminKey));
   res.json(fileToResponse(file));
 });
 
@@ -164,8 +187,19 @@ router.get('/:id', (req, res) => {
 router.use(blockAdminKeys);
 
 router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res) => {
-  const isApiKey = req.authMethod === 'api-key';
-  const client_id = isApiKey ? req.apiKeyClientId : req.body.client_id;
+  const scope = callerScope(req);
+  let client_id;
+  if (scope === null) {
+    client_id = req.body.client_id;            // owner session: as before
+  } else if (scope.length === 1) {
+    client_id = scope[0];                      // client key: body ignored, as before
+  } else {
+    client_id = Number.parseInt(req.body.client_id, 10);
+    if (!scope.includes(client_id)) {
+      cleanupTempFiles(req);
+      return res.status(403).json({ error: 'Access denied' });
+    }
+  }
 
   if (!client_id) {
     cleanupTempFiles(req);
@@ -183,7 +217,7 @@ router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res
     try {
       await validateUpload(f.path, f.originalname);
       const cleanName = sanitizeOriginalName(f.originalname);
-      const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id, isApiKey ? req.apiKeyId : null);
+      const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id, apiKeyIdFor(req, client_id));
       results.push(fileToResponse(file));
     } catch (err) {
       try { fs.unlinkSync(f.path); } catch {}
@@ -194,9 +228,12 @@ router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res
     }
   }
 
-  if (isApiKey) {
+  if (req.authMethod === 'api-key') {
     const minimal = results.map(r => r.error ? { error: r.error } : { cdn_url: r.cdn_url });
     return res.status(201).json(minimal);
+  }
+  if (req.authMethod === 'partner') {
+    return res.status(201).json(results.map(r => r.error ? r : stripAttribution(r)));
   }
   res.status(201).json(results);
 });
@@ -212,13 +249,14 @@ router.patch('/:id', requireSession, (req, res) => {
 });
 
 router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, res) => {
-  if (req.authMethod === 'api-key') {
+  const scope = callerScope(req);
+  if (scope) {
     const existing = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
     if (!existing) {
       cleanupTempFiles(req);
       return res.status(404).json({ error: 'File not found' });
     }
-    if (existing.client_id !== req.apiKeyClientId) {
+    if (!scope.includes(existing.client_id)) {
       cleanupTempFiles(req);
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -235,6 +273,7 @@ router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, re
     if (req.authMethod === 'api-key') {
       return res.json({ cdn_url: response.cdn_url });
     }
+    if (req.authMethod === 'partner') return res.json(stripAttribution(response));
     res.json(response);
   } catch (err) {
     try { fs.unlinkSync(req.file.path); } catch {}
@@ -249,7 +288,8 @@ router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, re
 async function handleCoverGeneration(req, res, format, width, height) {
   const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
-  if (req.authMethod === 'api-key' && file.client_id !== req.apiKeyClientId) {
+  const scope = callerScope(req);
+  if (scope && !scope.includes(file.client_id)) {
     return res.status(403).json({ error: 'Access denied' });
   }
   if (file.type !== 'image') {
@@ -271,12 +311,13 @@ async function handleCoverGeneration(req, res, format, width, height) {
   const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.webp`);
   fs.writeFileSync(tmpPath, coverBuffer);
   const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
-  const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id, req.authMethod === 'api-key' ? req.apiKeyId : null);
+  const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id, apiKeyIdFor(req, file.client_id));
 
   const response = fileToResponse(saved);
   if (req.authMethod === 'api-key') {
     return res.status(201).json({ cdn_url: response.cdn_url });
   }
+  if (req.authMethod === 'partner') return res.status(201).json(stripAttribution(response));
   res.status(201).json(response);
 }
 
@@ -286,11 +327,11 @@ router.post('/:id/square', coverLimiter, (req, res) => handleCoverGeneration(req
 router.post('/:id/fb', coverLimiter, (req, res) => handleCoverGeneration(req, res, 'fb', 1080, 1080));
 
 router.delete('/:id', (req, res) => {
-  // API key: verify file belongs to the key's client
-  if (req.authMethod === 'api-key') {
-    const file = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
-    if (!file) return res.status(404).json({ error: 'File not found' });
-    if (file.client_id !== req.apiKeyClientId) {
+  const scope = callerScope(req);
+  if (scope) {
+    const target = db.prepare('SELECT client_id FROM files WHERE id = ?').get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'File not found' });
+    if (!scope.includes(target.client_id)) {
       return res.status(403).json({ error: 'Access denied' });
     }
   }

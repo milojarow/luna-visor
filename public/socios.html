@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna Visor - Socios</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="login-page">
+  <div class="login-container">
+    <svg class="login-icon" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="28" fill="#e94560"/>
+      <circle cx="42" cy="26" r="22" fill="#1a1a2e"/>
+    </svg>
+    <h1>Luna Visor</h1>
+    <p class="subtitle">Acceso de socios</p>
+    <form id="login-form">
+      <input type="password" id="password" placeholder="Contraseña" autofocus required>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </div>
+  <script src="/js/socios-login.js"></script>
+</body>
+</html>

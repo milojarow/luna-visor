@@ -46,7 +46,7 @@ const ApiKeysPage = {
     for (const c of App.clients) {
       const opt = document.createElement('option');
       opt.value = c.id;
-      opt.textContent = c.is_ephemeral ? `⏱ ${c.name}` : c.name;
+      opt.textContent = clientFlagLabel(c);
       this.filterSelect.appendChild(opt);
     }
     this.filterSelect.value = current;
@@ -100,9 +100,7 @@ const ApiKeysPage = {
           </svg>
         </button>`;
       const clientObj = App.clients.find(c => c.id === k.client_id);
-      const clientIcon = clientObj && clientObj.is_ephemeral
-        ? `<img src="/calendar-clock.svg" alt="" class="client-ephemeral-icon" title="Cliente temporal (24h)">`
-        : '';
+      const clientIcon = clientObj ? clientFlagIcons(clientObj, 'client-flag-icon') : '';
       const clientLabel = k.is_admin
         ? '<span class="api-key-admin-badge">Admin</span>'
         : `${clientIcon}${escapeHtml(k.client_name)}`;
@@ -112,7 +110,7 @@ const ApiKeysPage = {
             <span class="api-key-name-text">${escapeHtml(k.name)}</span>${renameBtn}
           </div>
           <div class="api-key-meta">
-            <span class="api-key-client">${clientLabel}</span>
+            <span class="api-key-client">${clientLabel}</span>${k.partner_name ? `<span class="api-key-partner-badge">socio: ${escapeHtml(k.partner_name)}</span>` : ''}
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-preview">…${k.key_preview}</span>
             <span class="api-key-meta-sep">·</span>
@@ -134,7 +132,7 @@ const ApiKeysPage = {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const clientOptions = App.clients
-      .map(c => `<option value="${c.id}">${c.is_ephemeral ? '⏱ ' : ''}${escapeHtml(c.name)}</option>`)
+      .map(c => `<option value="${c.id}">${escapeHtml(clientFlagLabel(c))}</option>`)
       .join('');
     overlay.innerHTML = `
       <div class="modal">

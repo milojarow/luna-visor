@@ -143,3 +143,38 @@ test('migration is idempotent', () => {
   assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM api_keys').get().n, 2);
   db.close();
 });
+
+test('partners table and api_keys.partner_id land on a fresh database', () => {
+  const mediaPath = freshScratch('partners-fresh');
+  runConnection(mediaPath);
+  const db = openDb(mediaPath);
+
+  const cols = db.prepare('PRAGMA table_info(partners)').all().map(c => c.name);
+  assert.deepStrictEqual(
+    cols.sort(),
+    ['created_at', 'disabled_at', 'display_name', 'id', 'name', 'password_hash'],
+  );
+
+  const partnerId = db.prepare('PRAGMA table_info(api_keys)').all().find(c => c.name === 'partner_id');
+  assert.ok(partnerId, 'api_keys.partner_id missing');
+  assert.strictEqual(partnerId.notnull, 0, 'partner_id must be nullable');
+
+  db.prepare("INSERT INTO partners (name, password_hash) VALUES ('dup','x')").run();
+  assert.throws(
+    () => db.prepare("INSERT INTO partners (name, password_hash) VALUES ('dup','y')").run(),
+    /UNIQUE/,
+    'partner names must be unique',
+  );
+  db.close();
+});
+
+test('the partner migration is idempotent across restarts', () => {
+  const mediaPath = freshScratch('partners-idempotent');
+  runConnection(mediaPath);
+  runConnection(mediaPath);   // a second boot must not throw
+  runConnection(mediaPath);
+  const db = openDb(mediaPath);
+  const n = db.prepare('PRAGMA table_info(api_keys)').all().filter(c => c.name === 'partner_id').length;
+  assert.strictEqual(n, 1, 'partner_id must exist exactly once');
+  db.close();
+});

@@ -40,7 +40,25 @@ try {
   // Column already exists
 }
 
+// Migration: preserve_format clients (uploads stored byte-for-byte, kept forever).
+// Deliberately separate from is_ephemeral: that flag couples passthrough to a 24h
+// TTL, and a permanent raw vault needs the passthrough without the expiry.
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN preserve_format INTEGER DEFAULT 0');
+} catch {
+  // Column already exists
+}
+
 // Migration: extend files.type CHECK to allow 'lottie'.
+// Migration: link an api key to a partner. The partner's reach IS the set of
+// clients its live keys point at — revoking the key revokes the web access in
+// the same act, so there are never two levers to keep in sync.
+try {
+  db.exec('ALTER TABLE api_keys ADD COLUMN partner_id INTEGER REFERENCES partners(id)');
+} catch {
+  // Column already exists
+}
+
 // SQLite can't ALTER CHECK directly, and newer builds block PRAGMA writable_schema.
 // Standard pattern: rebuild the table inside a transaction. Idempotent.
 try {

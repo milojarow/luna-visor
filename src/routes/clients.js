@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const db = require('../db/connection');
-const { requireSession, requireSessionOrAdmin } = require('../middleware/auth');
+const { requireSession, requireSessionOrAdmin, requireClientListAccess, callerScope } = require('../middleware/auth');
 
 const router = Router();
 
@@ -8,27 +8,38 @@ function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-router.get('/', requireSessionOrAdmin, (_req, res) => {
+router.get('/', requireClientListAccess, (req, res) => {
+  const scope = callerScope(req);
+  const params = [];
+  let where = '';
+  if (scope) {
+    if (!scope.length) return res.json([]);
+    where = `WHERE c.id IN (${scope.map(() => '?').join(',')})`;
+    params.push(...scope);
+  }
   const clients = db.prepare(`
     SELECT c.*, COUNT(f.id) as file_count
     FROM clients c
     LEFT JOIN files f ON f.client_id = c.id
+    ${where}
     GROUP BY c.id
     ORDER BY c.name
-  `).all();
+  `).all(...params);
   res.json(clients);
 });
 
 router.post('/', requireSessionOrAdmin, (req, res) => {
-  const { name, is_ephemeral } = req.body;
+  const { name, is_ephemeral, preserve_format } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
   }
   const slug = slugify(name.trim());
   const ephemeralFlag = is_ephemeral ? 1 : 0;
+  // Orthogonal to is_ephemeral: this one only turns off transcoding, it never expires anything.
+  const preserveFlag = preserve_format ? 1 : 0;
   try {
-    const result = db.prepare('INSERT INTO clients (name, slug, is_ephemeral) VALUES (?, ?, ?)')
-      .run(name.trim(), slug, ephemeralFlag);
+    const result = db.prepare('INSERT INTO clients (name, slug, is_ephemeral, preserve_format) VALUES (?, ?, ?, ?)')
+      .run(name.trim(), slug, ephemeralFlag, preserveFlag);
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(client);
   } catch (err) {

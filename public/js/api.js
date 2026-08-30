@@ -9,7 +9,9 @@ const API = {
     }
     const res = await fetch(path, opts);
     if (res.status === 401) {
-      window.location.href = '/login.html';
+      window.location.href = window.location.pathname.startsWith('/socios')
+        ? '/socios'
+        : '/login.html';
       return null;
     }
     const data = await res.json();
@@ -19,7 +21,11 @@ const API = {
 
   getClients() { return this.request('GET', '/api/clients'); },
   createClient(name, opts = {}) {
-    return this.request('POST', '/api/clients', { name, is_ephemeral: !!opts.ephemeral });
+    return this.request('POST', '/api/clients', {
+      name,
+      is_ephemeral: !!opts.ephemeral,
+      preserve_format: !!opts.preserveFormat,
+    });
   },
   renameClient(id, name) { return this.request('PATCH', `/api/clients/${id}`, { name }); },
   deleteClient(id) { return this.request('DELETE', `/api/clients/${id}`); },
@@ -50,6 +56,14 @@ const API = {
       xhr.onerror = () => reject(new Error('Upload failed'));
       xhr.send(formData);
     });
+  },
+
+  // Replace keeps the same UUID and the same cdn_url — that is the whole point:
+  // references living in someone else's database keep resolving.
+  replaceFile(id, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('POST', `/api/files/${id}/replace`, formData);
   },
 
   getApiKeys() { return this.request('GET', '/api/api-keys'); },

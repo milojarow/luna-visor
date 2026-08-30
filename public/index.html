@@ -29,6 +29,10 @@
             <img src="/calendar-clock.svg" alt="" class="dropup-icon">
             <span>Cliente temporal (24h)</span>
           </button>
+          <button class="dropup-option" id="btn-add-raw-client" role="menuitem">
+            <img src="/file-lock.svg" alt="" class="dropup-icon">
+            <span>Vault sin conversión</span>
+          </button>
         </div>
       </div>
     </aside>
@@ -88,10 +92,25 @@
     <ul id="context-menu-items"></ul>
   </div>
 
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="File viewer" tabindex="-1">
+    <button id="lightbox-close" class="lightbox-close" aria-label="Close viewer">&times;</button>
+    <figure class="lightbox-panel">
+      <div id="lightbox-stage" class="lightbox-stage"></div>
+      <figcaption class="lightbox-info">
+        <div class="lightbox-name">
+          <span id="lightbox-name" class="lightbox-name-text"></span>
+          <span id="lightbox-ext" class="file-card-ext"></span>
+        </div>
+        <div id="lightbox-meta" class="lightbox-meta"></div>
+      </figcaption>
+    </figure>
+  </div>
+
   <script src="/js/api.js"></script>
   <script src="/js/clipboard.js"></script>
   <script src="/js/context-menu.js"></script>
   <script src="/js/gallery.js"></script>
+  <script src="/js/lightbox.js"></script>
   <script src="/js/sort.js"></script>
   <script src="/js/selection.js"></script>
   <script src="/js/upload.js"></script>

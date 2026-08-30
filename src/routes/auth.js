@@ -5,8 +5,11 @@ const config = require('../config');
 const router = Router();
 
 router.get('/status', (req, res) => {
+  const isAdmin = !!(req.session && req.session.authenticated);
+  const isPartner = !!(req.session && req.session.partnerId);
   res.json({
-    authenticated: !!(req.session && req.session.authenticated),
+    authenticated: isAdmin || isPartner,
+    role: isAdmin ? 'admin' : (isPartner ? 'partner' : null),
     cdn_base_url: config.CDN_BASE_URL,
   });
 });

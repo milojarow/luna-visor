@@ -7,9 +7,11 @@ const router = Router();
 
 router.get('/', requireSessionOrAdmin, (_req, res) => {
   const keys = db.prepare(`
-    SELECT ak.id, ak.name, ak.key_preview, ak.client_id, ak.is_admin, c.name as client_name, ak.created_at, ak.revoked_at
+    SELECT ak.id, ak.name, ak.key_preview, ak.client_id, ak.is_admin, c.name as client_name,
+           p.name as partner_name, ak.created_at, ak.revoked_at
     FROM api_keys ak
     LEFT JOIN clients c ON c.id = ak.client_id
+    LEFT JOIN partners p ON p.id = ak.partner_id
     ORDER BY (ak.revoked_at IS NOT NULL), ak.created_at DESC
   `).all();
   res.json(keys);
