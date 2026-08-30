@@ -31,3 +31,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
     revoked_at TEXT,
     CHECK ((is_admin = 1 AND client_id IS NULL) OR (is_admin = 0 AND client_id IS NOT NULL))
 );
+
+CREATE TABLE IF NOT EXISTS partners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    password_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    disabled_at TEXT
+);

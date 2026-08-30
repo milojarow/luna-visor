@@ -50,6 +50,15 @@ try {
 }
 
 // Migration: extend files.type CHECK to allow 'lottie'.
+// Migration: link an api key to a partner. The partner's reach IS the set of
+// clients its live keys point at — revoking the key revokes the web access in
+// the same act, so there are never two levers to keep in sync.
+try {
+  db.exec('ALTER TABLE api_keys ADD COLUMN partner_id INTEGER REFERENCES partners(id)');
+} catch {
+  // Column already exists
+}
+
 // SQLite can't ALTER CHECK directly, and newer builds block PRAGMA writable_schema.
 // Standard pattern: rebuild the table inside a transaction. Idempotent.
 try {
