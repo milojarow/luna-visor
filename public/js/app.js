@@ -1,3 +1,24 @@
+// Client-level storage flags, rendered the same way everywhere they show up.
+// is_ephemeral and preserve_format are independent; a client can carry both.
+const CLIENT_FLAGS = [
+  { key: 'is_ephemeral', icon: '/calendar-clock.svg', text: '⏱', title: 'Cliente temporal (24h)' },
+  { key: 'preserve_format', icon: '/file-lock.svg', text: '🔒', title: 'Vault sin conversión (formato original, permanente)' },
+];
+
+// For contexts that render HTML.
+function clientFlagIcons(client, cls) {
+  return CLIENT_FLAGS
+    .filter(f => client[f.key])
+    .map(f => `<img src="${f.icon}" alt="" class="${cls}" title="${f.title}">`)
+    .join('');
+}
+
+// For <select> options and context menus, where <img> doesn't render.
+function clientFlagLabel(client) {
+  const prefix = CLIENT_FLAGS.filter(f => client[f.key]).map(f => `${f.text} `).join('');
+  return `${prefix}${client.name}`;
+}
+
 const App = {
   clients: [],
   currentClientId: null,
@@ -11,6 +32,7 @@ const App = {
     this.cdnBaseUrl = (status.cdn_base_url || '').replace(/\/$/, '');
 
     ContextMenu.init();
+    Lightbox.init();
     Sort.init();
     Upload.init();
     ApiKeysPage.init();
@@ -36,6 +58,10 @@ const App = {
     document.getElementById('btn-add-ephemeral-client').addEventListener('click', () => {
       this.closeDropup();
       this.promptNewClient({ ephemeral: true });
+    });
+    document.getElementById('btn-add-raw-client').addEventListener('click', () => {
+      this.closeDropup();
+      this.promptNewClient({ preserveFormat: true });
     });
     document.addEventListener('click', (e) => {
       const dropup = document.getElementById('dropup-add-client');
@@ -68,17 +94,13 @@ const App = {
       const btn = document.createElement('button');
       btn.className = 'sidebar-item';
       if (this.currentClientId === client.id) btn.classList.add('active');
-      const icon = client.is_ephemeral
-        ? `<img src="/calendar-clock.svg" alt="" class="client-ephemeral-icon" title="Cliente temporal (24h)">`
-        : '';
+      const icon = clientFlagIcons(client, 'client-flag-icon');
       btn.innerHTML = `${icon}${escapeHtml(client.name)} <span class="file-count">${client.file_count}</span>`;
       btn.addEventListener('click', () => {
         this.showGalleryView();
         this.currentClientId = client.id;
         this.setActiveClient(client.id);
-        const titleIcon = client.is_ephemeral
-          ? `<img src="/calendar-clock.svg" alt="" class="gallery-title-icon" title="Cliente temporal (24h)">`
-          : '';
+        const titleIcon = clientFlagIcons(client, 'gallery-title-icon');
         document.getElementById('current-view-title').innerHTML = `${titleIcon}${escapeHtml(client.name)}`;
         this.loadFiles();
       });
@@ -127,10 +149,15 @@ const App = {
   },
 
   async promptNewClient(opts = {}) {
-    const title = opts.ephemeral ? 'Nuevo cliente de contenido efímero' : 'New Client';
-    const description = opts.ephemeral
-      ? 'El cliente y sus API keys son permanentes como los demás. Lo que se autoborra es cada archivo que se suba aquí: 24 horas después del upload, luna lo elimina del CDN automáticamente.'
-      : '';
+    let title = 'New Client';
+    let description = '';
+    if (opts.ephemeral) {
+      title = 'Nuevo cliente de contenido efímero';
+      description = 'El cliente y sus API keys son permanentes como los demás. Lo que se autoborra es cada archivo que se suba aquí: 24 horas después del upload, luna lo elimina del CDN automáticamente.';
+    } else if (opts.preserveFormat) {
+      title = 'Nuevo vault sin conversión';
+      description = 'Los archivos se guardan tal cual llegan: misma extensión, mismos bytes. Sin pasar por sharp ni ffmpeg, sin -thumb, sin variantes. No caducan — se quedan hasta que los borres. La lista de extensiones permitidas sigue siendo la misma.';
+    }
     const name = await this.showPrompt(title, 'Client name:', '', { description });
     if (!name) return;
     try {
@@ -148,9 +175,7 @@ const App = {
       await API.renameClient(client.id, name);
       await this.loadClients();
       if (this.currentClientId === client.id) {
-        const titleIcon = client.is_ephemeral
-          ? `<img src="/calendar-clock.svg" alt="" class="gallery-title-icon" title="Cliente temporal (24h)">`
-          : '';
+        const titleIcon = clientFlagIcons(client, 'gallery-title-icon');
         document.getElementById('current-view-title').innerHTML = `${titleIcon}${escapeHtml(name)}`;
       }
     } catch (err) {
@@ -211,7 +236,7 @@ const App = {
 
   async showBulkMoveDialog(files) {
     const items = this.clients.map((c) => ({
-      label: c.is_ephemeral ? `⏱ ${c.name}` : c.name,
+      label: clientFlagLabel(c),
       action: async () => {
         for (const f of files) await API.moveFile(f.id, c.id);
         Selection.clear();
@@ -224,7 +249,7 @@ const App = {
 
   async showBulkCopyDialog(files) {
     const items = this.clients.map((c) => ({
-      label: c.is_ephemeral ? `⏱ ${c.name}` : c.name,
+      label: clientFlagLabel(c),
       action: async () => {
         for (const f of files) await API.copyFile(f.id, c.id);
         Selection.clear();
@@ -257,7 +282,7 @@ const App = {
       return;
     }
     const items = targets.map((c) => ({
-      label: c.is_ephemeral ? `⏱ ${c.name}` : c.name,
+      label: clientFlagLabel(c),
       action: async () => {
         await API.moveFile(file.id, c.id);
         await this.loadFiles();
@@ -272,7 +297,7 @@ const App = {
 
   async showCopyDialog(file) {
     const items = this.clients.map((c) => ({
-      label: c.is_ephemeral ? `⏱ ${c.name}` : c.name,
+      label: clientFlagLabel(c),
       action: async () => {
         await API.copyFile(file.id, c.id);
         await this.loadFiles();

@@ -148,8 +148,8 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/), or fe
 - `POST /api/auth/logout`
 
 **Clients** (create/list/rename: session or admin key; delete: session only)
-- `GET /api/clients` — each row includes `is_ephemeral` (0 or 1)
-- `POST /api/clients` — body `{ name, is_ephemeral?: boolean }`. Default `false`
+- `GET /api/clients` — each row includes `is_ephemeral` and `preserve_format` (0 or 1)
+- `POST /api/clients` — body `{ name, is_ephemeral?: boolean, preserve_format?: boolean }`. Both default `false`, both are create-time only
 - `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or active api keys)
 
 **Files**
@@ -206,13 +206,33 @@ The default image policy lives in `src/services/branding.js` as `DEFAULT_IMAGE_P
 
 Cover generator output is also WebP. Video thumbnails stay JPEG (a single frame extracted at 1s by `ffmpeg`).
 
-**Ephemeral clients bypass this entire pipeline** (see next section).
+**Two per-client flags bypass this entire pipeline** — `preserve_format` and `is_ephemeral` (see the next two sections).
+
+## Preserve-format vaults
+
+A client created with `preserve_format = 1` stores every upload **byte-for-byte**: same extension, same bytes, no `sharp`, no `ffmpeg`, no `-thumb` / `-md` variants. PNG stays PNG, JPG stays JPG, MOV stays MOV. Nothing expires — the files live until someone deletes them.
+
+Created from the WUI with the `▲` drop-up next to "+ New Client" ("Vault sin conversión"), or via the API with a session or an **admin key**:
+
+```bash
+curl -X POST https://luna.example.com/api/clients \
+  -H "X-API-Key: $LUNA_ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{ "name": "masters", "preserve_format": true }'
+```
+
+What it does *not* change:
+
+- **The allowlist still applies.** `upload-validator.js` rejects anything outside the supported extension list with a 400 — passthrough is not "accepts any file".
+- **The gallery has no thumbnails to show.** Images render from the original (heavier previews); video and everything else fall back to the placeholder card.
+- **`replaceFile` inherits it** — replacing a file in a preserve-format vault keeps the new file raw too, same UUID.
+
+It is orthogonal to `is_ephemeral`: that one controls the 24h TTL, this one controls transcoding. A client can carry both (raw storage *and* auto-expiry). Neither can be flipped afterwards — `PATCH /api/clients/:id` only renames.
 
 ## Ephemeral clients
 
 A client created with `is_ephemeral = 1` flips two switches:
 
-1. **Passthrough uploads** — files are stored as-is with their original extension. PNG stays PNG, JPG stays JPG, MOV stays MOV. No `sharp`, no `ffmpeg`, no `-thumb` / `-md` variants. The original bytes go straight to disk under `{uuid}.{ext}`.
+1. **Passthrough uploads** — same byte-for-byte storage as a preserve-format vault (above).
 2. **24h auto-expire** — a background sweep (`src/services/file-expirer.js`, runs every 15 minutes via `setInterval`) deletes files whose `created_at` is older than 24 hours, along with all on-disk siblings. Cleanup re-uses the same `deleteFile()` path as manual deletion.
 
 Created from the WUI with the small `▲` drop-up next to "+ New Client", or via the API:

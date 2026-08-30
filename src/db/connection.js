@@ -40,6 +40,15 @@ try {
   // Column already exists
 }
 
+// Migration: preserve_format clients (uploads stored byte-for-byte, kept forever).
+// Deliberately separate from is_ephemeral: that flag couples passthrough to a 24h
+// TTL, and a permanent raw vault needs the passthrough without the expiry.
+try {
+  db.exec('ALTER TABLE clients ADD COLUMN preserve_format INTEGER DEFAULT 0');
+} catch {
+  // Column already exists
+}
+
 // Migration: extend files.type CHECK to allow 'lottie'.
 // SQLite can't ALTER CHECK directly, and newer builds block PRAGMA writable_schema.
 // Standard pattern: rebuild the table inside a transaction. Idempotent.

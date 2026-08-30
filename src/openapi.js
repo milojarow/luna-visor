@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.8.0',
+    version: '1.9.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -26,7 +26,14 @@ module.exports = {
       '',
       '## File storage standard',
       '',
-      'Non-ephemeral uploads are normalized: images → WebP (`2048×2048` + `300×300` thumb), videos → MP4 H.264/AAC. SVG, MP3, and `.lottie` are passthrough — bytes preserved, no re-encoding. Ephemeral clients (`is_ephemeral=1`) bypass all transformation and auto-delete after 24h.',
+      'Uploads are normalized by default: images → WebP (`2048×2048` + `300×300` thumb), videos → MP4 H.264/AAC. SVG, MP3, and `.lottie` are always passthrough — bytes preserved, no re-encoding.',
+      '',
+      'Two per-client flags opt out of normalization entirely, storing every upload byte-for-byte under its original extension. They are independent, and both are fixed at create time:',
+      '',
+      '- `preserve_format=1` — permanent raw vault. Nothing expires.',
+      '- `is_ephemeral=1` — temp content. Every file auto-deletes 24h after upload.',
+      '',
+      'In both cases the uploaded extension is the one that ends up in `cdn_url`, and no `-thumb` variant exists.',
       '',
       '## Public file URLs',
       '',
@@ -87,12 +94,13 @@ module.exports = {
 
       Client: {
         type: 'object',
-        required: ['id', 'name', 'slug', 'is_ephemeral'],
+        required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format'],
         properties: {
           id: { type: 'integer', example: 2 },
           name: { type: 'string', example: 'posteacasa' },
           slug: { type: 'string', example: 'posteacasa', description: 'kebab-case lowercased name.' },
           is_ephemeral: { type: 'integer', enum: [0, 1], example: 0, description: '1 = uploads bypass transcoding and auto-delete after 24h.' },
+          preserve_format: { type: 'integer', enum: [0, 1], example: 0, description: '1 = uploads stored byte-for-byte with their original extension, kept indefinitely. Independent of is_ephemeral.' },
           created_at: { type: 'string', format: 'date-time', example: '2026-04-12 18:33:00' },
           file_count: { type: 'integer', example: 142, description: 'Present only on GET /clients list responses.' },
         },
@@ -256,12 +264,13 @@ module.exports = {
         properties: {
           client: {
             type: 'object',
-            required: ['id', 'name', 'slug', 'is_ephemeral'],
+            required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format'],
             properties: {
               id: { type: 'integer', example: 6 },
               name: { type: 'string', example: 'tacos-elcamioncito' },
               slug: { type: 'string', example: 'tacos-elcamioncito' },
               is_ephemeral: { type: 'boolean', example: false, description: 'true = uploads bypass transcoding and auto-delete after 24h.' },
+              preserve_format: { type: 'boolean', example: false, description: 'true = uploads stored byte-for-byte with their original extension, kept indefinitely.' },
             },
           },
           api_key: {
@@ -492,7 +501,7 @@ module.exports = {
       post: {
         tags: ['Clients'],
         summary: 'Create a new client. Session or admin key (client-scoped keys get 403).',
-        description: 'Set `is_ephemeral: true` for temp clients (uploads bypass transcoding and auto-delete after 24h).',
+        description: 'Two optional, independent flags — both fixed at create time, neither changeable via PATCH.\n\n- `preserve_format: true` → permanent raw vault: uploads stored byte-for-byte with their original extension, never expire.\n- `is_ephemeral: true` → temp client: same byte-for-byte storage, but every file auto-deletes 24h after upload.',
         security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
@@ -503,7 +512,8 @@ module.exports = {
                 required: ['name'],
                 properties: {
                   name: { type: 'string', example: 'new-client' },
-                  is_ephemeral: { type: 'boolean', default: false },
+                  is_ephemeral: { type: 'boolean', default: false, description: 'Files auto-delete 24h after upload.' },
+                  preserve_format: { type: 'boolean', default: false, description: 'Store uploads byte-for-byte with their original extension. Permanent.' },
                 },
               },
             },

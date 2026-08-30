@@ -62,8 +62,9 @@ const Gallery = {
       img.alt = file.original_name;
       img.loading = 'lazy';
       previewContainer.appendChild(img);
-    } else if (file.type === 'image' && file.client_is_ephemeral) {
-      // Ephemeral images have no -thumb variant; load the original.
+    } else if (file.type === 'image') {
+      // Passthrough images (ephemeral or preserve_format clients) never got a
+      // -thumb/-normal variant, so the original is the only rendition on disk.
       const img = document.createElement('img');
       img.className = 'file-card-preview';
       img.src = `${this.cdnBase}/${file.id}.${file.extension}`;
@@ -111,9 +112,9 @@ const Gallery = {
     `;
     card.appendChild(info);
 
-    // Double-click: open original in new tab
+    // Double-click: view the original in the centered viewer
     card.addEventListener('dblclick', () => {
-      window.open(file.cdn_url, '_blank');
+      Lightbox.open(file);
     });
 
     // Right-click: context menu

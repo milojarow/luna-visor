@@ -31,10 +31,13 @@ function stripReEncodedExtension(originalName) {
 }
 
 async function processUpload(tempPath, ext, type, uuid, clientId) {
-  // Ephemeral clients: pure passthrough — keep original format, no variants.
-  // The 24h auto-expirer will sweep these regardless of size or type.
-  const client = db.prepare('SELECT is_ephemeral FROM clients WHERE id = ?').get(clientId);
-  if (client?.is_ephemeral) {
+  // Passthrough clients: pure byte copy — keep original format, no variants.
+  // Two independent reasons to land here:
+  //   is_ephemeral    → temp content; the 24h expirer sweeps it regardless of type.
+  //   preserve_format → permanent raw vault; nothing ever expires it.
+  // Both set at create time; neither can be flipped on an existing client.
+  const client = db.prepare('SELECT is_ephemeral, preserve_format FROM clients WHERE id = ?').get(clientId);
+  if (client?.is_ephemeral || client?.preserve_format) {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
     fs.copyFileSync(tempPath, destPath);
     return {

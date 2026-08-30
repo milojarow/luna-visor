@@ -262,7 +262,7 @@ body {
   flex-shrink: 0;
 }
 
-.client-ephemeral-icon {
+.client-flag-icon {
   width: 14px;
   height: 14px;
   vertical-align: -2px;
@@ -1059,4 +1059,132 @@ body {
     var(--card-bg-light) 4px,
     var(--card-bg-light) 8px
   );
+}
+
+/* Centered file viewer (double-click a card) */
+body.lightbox-open {
+  overflow: hidden;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background: rgba(8, 10, 22, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.lightbox:focus {
+  outline: none;
+}
+
+.lightbox-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  max-width: min(92vw, 1400px);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lightbox-panel {
+    animation: lightbox-in 140ms ease-out;
+  }
+}
+
+@keyframes lightbox-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.lightbox-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  min-height: 120px;
+}
+
+/* Vertical cap leaves room for the overlay padding (5rem) + the caption row (~4rem),
+   so the media is as large as it can be without pushing the caption off screen. */
+.lightbox-media {
+  display: block;
+  max-width: min(92vw, 1400px);
+  max-height: calc(100vh - 10.5rem);
+}
+
+.lightbox-media-audio {
+  width: min(520px, 78vw);
+  margin: 2rem 1.5rem;
+}
+
+.lightbox-info {
+  padding: 0.65rem 0.9rem;
+  min-width: 0;
+}
+
+.lightbox-name {
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.lightbox-name-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lightbox-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lightbox-close {
+  position: fixed;
+  z-index: 1; /* the panel is a later sibling — without this it can paint over the button */
+  top: 0.75rem;
+  right: 1.25rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 2rem;
+  line-height: 1;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lightbox-close:hover {
+  color: var(--accent);
+}
+
+.lightbox-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lightbox-error {
+  padding: 2.5rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.lightbox-error a {
+  display: inline-block;
+  margin-top: 0.6rem;
+  color: var(--accent);
 }
