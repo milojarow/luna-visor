@@ -15,3 +15,5 @@ Mover/copiar entre políticas pública y privada devuelve409 en ambas direccione
 La operación requiere configurar `LUNA_BASE_URL` en el servidor. Sin ese origen, crear una bóveda privada falla con503 en lugar de producir una URL pública equivocada.
 
 Pruebas aisladas: autenticación/alcance/socios/admin/revocación; Range y HEAD; bytes y permisos; descarga segura frente a MIME falso; fronteras públicas/privadas; replace/copy/delete; rollback ante fallos SQLite; caducidad. Nunca usan conversaciones reales.
+
+Las bóvedas privadas tienen un tope predeterminado de30GiB cada una; `LUNA_PRIVATE_MAX_BYTES` permite ajustarlo desde el entorno. Se reserva1GiB libre de disco (`LUNA_PRIVATE_DISK_RESERVE_BYTES`) antes de crear/copiar/reemplazar bytes. La comprobación de cuota y el INSERT son síncronos después de detectar el tipo: las subidas concurrentes no eluden el tope. La aplicación conserva además sus límites y cupos de usuario.

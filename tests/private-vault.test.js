@@ -74,3 +74,16 @@ test('private policy is create-only, discoverable and compatible with expiry',as
  const me=await(await api('a','/me')).json();assert.equal(me.client.is_private,true);assert.ok(me.callable_endpoints.includes('GET /api/files/{id}/content'));assert.equal(me.branding.available_cover_formats.length,0);
  const source=await upload('a','no-render.png',await png());const cover=await api('a',`/files/${idOf(source.body[0].cdn_url)}/story`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});assert.equal(cover.status,409);
 });
+
+test('private quota covers concurrent saves, copies and replacement without destroying the current file',async()=>{
+ const c=Number(db.prepare("INSERT INTO clients(name,slug,is_private,preserve_format)VALUES('quota','quota',1,1)").run().lastInsertRowid);
+ const previous=process.env.LUNA_PRIVATE_MAX_BYTES;process.env.LUNA_PRIVATE_MAX_BYTES='200';
+ try {
+  const files=await Promise.allSettled([saveFile(temp(Buffer.alloc(120,65)),'one.bin','application/octet-stream',120,c),saveFile(temp(Buffer.alloc(120,66)),'two.bin','application/octet-stream',120,c)]);
+  assert.equal(files.filter(x=>x.status==='fulfilled').length,1);assert.equal(files.filter(x=>x.status==='rejected'&&x.reason.status===507).length,1);
+  const row=files.find(x=>x.status==='fulfilled').value;
+  await assert.rejects(copyFile(row.id,c),{status:507});
+  const changed=await replaceFile(row.id,temp(Buffer.alloc(150,67)),'new.bin','application/octet-stream',150);assert.equal(changed.size_bytes,150);
+  await assert.rejects(replaceFile(row.id,temp(Buffer.alloc(201,68)),'too-big.bin','application/octet-stream',201),{status:507});assert.deepEqual(fs.readFileSync(privateFiles.disk(changed)),Buffer.alloc(150,67));
+ }finally{if(previous===undefined)delete process.env.LUNA_PRIVATE_MAX_BYTES;else process.env.LUNA_PRIVATE_MAX_BYTES=previous;}
+});

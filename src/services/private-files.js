@@ -39,10 +39,19 @@ async function describe(tempPath, name) {
   const type = mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : mime.startsWith('video/') ? 'video' : 'document';
   return { extension: /^[a-z0-9]{1,12}$/.test(ext) ? ext : 'bin', mime_type:mime, type, size_bytes:fs.statSync(tempPath).size };
 }
+function assertCapacity(clientId, bytes, replacingId = null) {
+  const limit = Number(process.env.LUNA_PRIVATE_MAX_BYTES || 30 * 1024 ** 3);
+  const reserve = Number(process.env.LUNA_PRIVATE_DISK_RESERVE_BYTES || 1024 ** 3);
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(reserve) || reserve < 0) throw new Error('Invalid private storage capacity configuration');
+  const used = db.prepare('SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM files WHERE client_id=? AND id != ?').get(clientId, replacingId || '').bytes;
+  if (used + bytes > limit) { const error = new Error('Private vault storage quota exceeded'); error.status=507; throw error; }
+  const stats = fs.statfsSync(root());
+  if (stats.bavail * stats.bsize < reserve + bytes) { const error = new Error('Private storage disk reserve reached'); error.status=507; throw error; }
+}
 async function savePrivate(temp, name, clientId, apiKeyId = null) {
   let dest;
   try {
-    const metadata = await describe(temp, name); const id = randomUUID();
+    const metadata = await describe(temp, name); assertCapacity(clientId,metadata.size_bytes); const id = randomUUID();
     dest = disk({id, extension:metadata.extension}); fs.copyFileSync(temp,dest); fs.chmodSync(dest,0o600);
     db.prepare(`INSERT INTO files(id,original_name,extension,mime_type,size_bytes,client_id,api_key_id,type,has_thumbnail,has_resized)
       VALUES(?,?,?,?,?,?,?,?,0,0)`).run(id,name,metadata.extension,metadata.mime_type,metadata.size_bytes,clientId,apiKeyId,metadata.type);
@@ -65,6 +74,7 @@ async function replacePrivate(fileId,temp,name) {
     const metadata=await describe(temp,name);
     old=db.prepare('SELECT * FROM files WHERE id=?').get(fileId);
     if (!old || !clientIsPrivate(old.client_id)) return null;
+    assertCapacity(old.client_id,metadata.size_bytes,fileId);
     staged=path.join(root(),`.replace-${randomUUID()}`); fs.copyFileSync(temp,staged); fs.chmodSync(staged,0o600);
     backup=path.join(root(),`.previous-${randomUUID()}`); const previous=disk(old);
     destination=disk({id:fileId,extension:metadata.extension});
@@ -83,6 +93,7 @@ async function replacePrivate(fileId,temp,name) {
   } finally { remove(temp); if(staged)remove(staged); }
 }
 function copyPrivate(file,targetClientId) {
+  assertCapacity(targetClientId,file.size_bytes);
   const id=randomUUID(), dest=disk({id,extension:file.extension});
   try {
     fs.copyFileSync(disk(file),dest);fs.chmodSync(dest,0o600);
