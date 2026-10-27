@@ -74,7 +74,7 @@ cdn.example.com {
 luna.example.com {
   @api_key {
     header X-API-Key *
-    path /api/files/upload /api/files/* /api/overlay/*
+    path /api/files /api/files/* /api/overlay/* /api/clients /api/clients/* /api/api-keys /api/api-keys/* /api/me
   }
   handle @api_key {
     reverse_proxy 127.0.0.1:3000
@@ -153,11 +153,12 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/), or fe
 - `PATCH | DELETE /api/clients/:id` (delete blocked if client has files or active api keys)
 
 **Files**
-- `GET /api/files` — list (session) — optional `?client_id=`. Each file row includes `api_key_id`, `api_key_name`, `api_key_revoked_at`, and `client_is_ephemeral` (LEFT JOINed). The last lets the gallery render countdown badges. `NULL` for files uploaded before per-file API-key tracking was added.
-- `POST /api/files/upload` — multipart, field `files`, up to 20 × 500MB — session or API key. New files record the API key ID used to upload them.
+- `GET /api/files` — session sees all; client key sees its own vault (foreign `?client_id=` returns 403); admin key reads globally with optional `?client_id=`. Optional `limit` (capped at 500) and `offset`, no default cap. API-key results include `id`, `cdn_url`, `client_id`, original name and media metadata; admin also gets `client_name`. Upload attribution (`api_key_id`, `api_key_name`, `api_key_revoked_at`) is session-only.
+- `GET /api/files/:id` — same read scope and projection; foreign-client access returns 403.
+- `POST /api/files/upload` — multipart, field `files` (plural, repeatable), up to 20 × 500 MiB — session or client key; admin gets 403. Client key returns HTTP 201 with an array of `{cdn_url}` or `{error}` per input, NOT IDs. Inspect every item: 201 does not guarantee any or all files succeeded. Session returns full metadata or per-file errors. New files record the uploading key ID.
 - `PATCH /api/files/:id` — move to another client (session)
 - `POST /api/files/:id/copy` — copy to another client (session)
-- `POST /api/files/:id/replace` — multipart, field `file` — same UUID, same cdn_url — session or API key (own client only). Replace keeps the original `api_key_id` (the "first source" of the file).
+- `POST /api/files/:id/replace` — multipart, field `file` (singular) — same UUID, but extension and URL can change. Always use the returned `cdn_url`. HTTP 200 is an object `{cdn_url}` for a client key, full metadata for session. Session or client key (own vault only); admin gets 403. Keeps original `api_key_id` and `created_at`, so it does not renew ephemeral expiry. Processing happens under a temporary UUID before removing originals and renaming variants; this is NOT a full filesystem/DB transaction.
 - `DELETE /api/files/:id` — session or API key (own client only)
 - `POST /api/files/scan-references` — trigger log scan (session)
 
@@ -166,8 +167,12 @@ All routes are under `/api`. Full details in [`src/routes/`](src/routes/), or fe
 - `POST /api/files/:id/cover` — 1080×1350 (Instagram feed post)
 - `POST /api/files/:id/square` — 1080×1080
 - `POST /api/files/:id/fb` — 1080×1080 (Facebook post)
+- `POST /api/files/:id/watermark` — anti-theft tiled text plus optional white logo, source dimensions preserved by the generator. Requires image source and `watermark` in the client's enabled formats (check `/api/me`). Optional JSON `{text, pattern_opacity, logo_opacity, logo_width_pct, logo_cx, logo_cy}`; numeric options are fractions clamped to 0..1, falling back to branding/defaults for non-finite values. `logo_opacity:0` omits the logo. No `position` or real-estate fields are required here. Saves a NEW UUID under the same vault, leaves the master intact; HTTP 201 `{cdn_url}` for client keys, full file for session. The generated WebP then follows the vault's storage policy (normal storage may resize it; raw/ephemeral keep it). 400 for non-image/disabled format, 401 for invalid auth, 403 for foreign scope/admin key, 404 for missing source, 429 for the shared 30/min cover limit, 500 for processing/storage failure. Overrides are not strictly type/range-validated; send numeric fractions and a string `text`.
 
 Body shape depends on the client's `brand.layout`:
+
+The layout-specific fields below apply to story/cover/square/fb, not watermark.
+Watermark rendering limits source input to 50,000,000 pixels and applies a 30-second sharp timeout; this is not an end-to-end HTTP deadline.
 
 - **`layout: 'default'`** (real-estate) — body accepts `operation`, `location`, `bedrooms`, `bathrooms`, `area`, and `amenities.{parking,garden,trees}`. Source is resized cover to the endpoint's W×H.
 - **`layout: 'minimal'`** — logo in a corner + diagonal text watermark only. Body optional; accepts `{position}` to choose the corner (`top-right` default, `top-left`, `bottom-right`, `bottom-left`, or `none` to skip the logo and apply only the watermark). **Source dimensions are preserved** — the endpoint's W×H target is ignored. Use this layout when the caller already produces images at the target size and just wants branding overlaid.
@@ -184,7 +189,7 @@ Both layouts coexist in [`src/services/cover-generator.js`](src/services/cover-g
 
 API key header: `X-API-Key: <raw-key>`. Client-scoped keys are tied to a single `client_id` — they can upload to, replace, delete, and generate covers from files of that client only.
 
-**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can create, list, and rename clients and API keys, and **revoke client keys** — the full lifecycle (create client → mint its key → hand the key to the app → rename/revoke on rotation) with zero WUI involvement. They cannot touch files, covers, or overlays (explicit 403), cannot delete clients, cannot mint more admin keys, and cannot rename or revoke admin keys (including themselves) — admin keys are WUI-managed, so a leaked admin key can never lock the human out. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
+**Admin API keys** — onboarding credentials for an external orchestrator (e.g. an AI agent that provisions new clients). `is_admin = 1`, `client_id NULL`. They can create, list, and rename clients and API keys, and **revoke client keys** — the full lifecycle (create client → mint its key → hand the key to the app → rename/revoke on rotation) with zero WUI involvement. They can read file metadata globally via `GET /api/files` and `GET /api/files/:id`, but cannot write files, generate covers, or generate overlays (explicit 403), cannot delete clients, cannot mint more admin keys, and cannot rename or revoke admin keys (including themselves) — admin keys are WUI-managed, so a leaked admin key can never lock the human out. Mint one from the WUI's API Keys page via the "Admin — todos los clients" option, and call `GET /api/me` with it to self-discover the callable surface.
 
 ## Storage standard
 
@@ -200,7 +205,7 @@ Every image upload is re-encoded to WebP and every video to MP4 (H.264 / AAC). T
 | mp3 | `.mp3` | Passthrough |
 | lottie | `.lottie` | Passthrough — bytes preserved exactly. Both dotLottie (ZIP archive) and raw Bodymovin JSON are accepted; the validator sniffs magic bytes (`PK\x03\x04` for ZIP, JSON-parse for the rest with a sanity check on lottie schema fields). No thumbnail, no variants — the animation runtime needs the original bytes. |
 
-Everything else is rejected at the upload validator with a 400. The allowlist lives in `src/services/upload-validator.js`.
+Everything else is rejected by `src/services/upload-validator.js`. Replace returns 400 for invalid input; batch upload reports per-file `{error}` entries in its 201 array, not a request-wide 400 for each item.
 
 The default image policy lives in `src/services/branding.js` as `DEFAULT_IMAGE_POLICY`: a 2048-on-the-longest-side full variant plus a 300px `-thumb` preview, both WebP at quality 82/78 with effort 6/4. Edit the constant if you want a different default for every client.
 
@@ -210,7 +215,7 @@ Cover generator output is also WebP. Video thumbnails stay JPEG (a single frame 
 
 ## Preserve-format vaults
 
-A client created with `preserve_format = 1` stores every upload **byte-for-byte**: same extension, same bytes, no `sharp`, no `ffmpeg`, no `-thumb` / `-md` variants. PNG stays PNG, JPG stays JPG, MOV stays MOV. Nothing expires — the files live until someone deletes them.
+A client created with `preserve_format = 1` stores every upload **byte-for-byte**: same extension, same bytes, no `sharp`, no `ffmpeg`, no `-thumb` / `-md` variants. PNG stays PNG, JPG stays JPG, MOV stays MOV. Unless `is_ephemeral` is also set, nothing expires — the files live until someone deletes them.
 
 Created from the WUI with the `▲` drop-up next to "+ New Client" ("Vault sin conversión"), or via the API with a session or an **admin key**:
 
@@ -233,7 +238,7 @@ It is orthogonal to `is_ephemeral`: that one controls the 24h TTL, this one cont
 A client created with `is_ephemeral = 1` flips two switches:
 
 1. **Passthrough uploads** — same byte-for-byte storage as a preserve-format vault (above).
-2. **24h auto-expire** — a background sweep (`src/services/file-expirer.js`, runs every 15 minutes via `setInterval`) deletes files whose `created_at` is older than 24 hours, along with all on-disk siblings. Cleanup re-uses the same `deleteFile()` path as manual deletion.
+2. **24h auto-expire** — a background sweep (`src/services/file-expirer.js`, runs at boot and every 15 minutes via `setInterval`) deletes files whose `created_at` is older than 24 hours, along with all on-disk siblings. Cleanup re-uses the same `deleteFile()` path as manual deletion. Expiry occurs on the next running sweep, not exactly at 24h. Replace does not change `created_at` or renew the TTL. Raw/ephemeral still reject unsupported extensions and invalid content.
 
 Created from the WUI with the small `▲` drop-up next to "+ New Client", or via the API:
 
@@ -296,7 +301,16 @@ node server.js   # restart by hand — no hot reload
 
 Logs go to stdout. Under systemd, `journalctl -u luna-visor -f`.
 
-No test suite yet. The app is deliberately small and file-level reading is usually enough to understand behavior.
+Run the Node test suite with isolated SQLite and generated media, never `/srv/media`:
+
+```bash
+SCRATCHPAD=$(mktemp -d "${TMPDIR:?}/luna-tests.XXXXXX")
+MEDIA_PATH="$SCRATCHPAD/media" SCRATCHPAD="$SCRATCHPAD" npm test
+```
+
+Tests cover authentication/authorization, client and partner scopes, migrations, normal/raw/ephemeral storage, API response shapes, replacement/expiry, watermark, and OpenAPI versus `/me` discovery. Inputs are generated in scratch; do not commit multimedia fixtures. Luna is the sole multimedia host: use CDN URLs, not GitHub/Vercel assets, and search existing files before uploading duplicates.
+
+Optional UI browser check: with Playwright installed outside this checkout, run `NODE_PATH=/path/to/node_modules SCRATCHPAD=/your/scratch node scripts/check-api-keys-ui.js`. It renders the real API-key list with explicitly synthetic admin/client/revoked rows, checks desktop/mobile layout, action callbacks, keyboard focus and gold text contrast, and writes screenshots only to scratch. `--base-url http://127.0.0.1:3000` additionally checks that deployed CSS/JS match the checkout. Set `CHROMIUM_PATH` if using an existing Chromium binary. No login, raw keys or API writes are used.
 
 ## License
 

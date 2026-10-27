@@ -10,8 +10,10 @@ const { generateCover, generateWatermark, getBranding, MINIMAL_LOGO_POSITIONS } 
 const { requireSession, blockAdminKeys, callerScope } = require('../middleware/auth');
 const { validateUpload, sanitizeOriginalName, ValidationError } = require('../services/upload-validator');
 
+// os.tmpdir honors TMPDIR, keeping isolated tests out of shared upload storage.
+const uploadTempPath = path.join(require('os').tmpdir(), 'luna-visor-uploads');
 const upload = multer({
-  dest: '/tmp/luna-visor-uploads/',
+  dest: uploadTempPath,
   limits: { fileSize: 500 * 1024 * 1024, files: 20 },
 });
 
@@ -308,7 +310,7 @@ async function handleCoverGeneration(req, res, format, width, height) {
   const sourceBuffer = fs.readFileSync(sourcePath);
   const coverBuffer = await generateCover({ sourceBuffer, data: req.body, width, height, clientId: file.client_id });
 
-  const tmpPath = path.join('/tmp/luna-visor-uploads/', `${format}-${file.id}.webp`);
+  const tmpPath = path.join(uploadTempPath, `${format}-${file.id}.webp`);
   fs.writeFileSync(tmpPath, coverBuffer);
   const coverName = `${format}-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
   const saved = await saveFile(tmpPath, coverName, 'image/webp', coverBuffer.length, file.client_id, apiKeyIdFor(req, file.client_id));
@@ -349,7 +351,7 @@ router.post('/:id/watermark', coverLimiter, async (req, res) => {
   const sourceBuffer = fs.readFileSync(sourcePath);
   const out = await generateWatermark({ sourceBuffer, brand, opts: req.body || {} });
 
-  const tmpPath = path.join('/tmp/luna-visor-uploads/', `watermark-${file.id}.webp`);
+  const tmpPath = path.join(uploadTempPath, `watermark-${file.id}.webp`);
   fs.writeFileSync(tmpPath, out);
   const outName = `wm-${file.original_name.replace(/\.[^.]+$/, '')}.webp`;
   const saved = await saveFile(tmpPath, outName, 'image/webp', out.length, file.client_id, apiKeyIdFor(req, file.client_id));

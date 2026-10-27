@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.10.0',
+    version: '1.11.0',
     description: [
       'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
       '',
@@ -30,10 +30,11 @@ module.exports = {
       '',
       'Two per-client flags opt out of normalization entirely, storing every upload byte-for-byte under its original extension. They are independent, and both are fixed at create time:',
       '',
-      '- `preserve_format=1` — permanent raw vault. Nothing expires.',
-      '- `is_ephemeral=1` — temp content. Every file auto-deletes 24h after upload.',
+      '- `preserve_format=1` — raw vault. Permanent unless is_ephemeral is also set.',
+      '- `is_ephemeral=1` — passthrough plus expiry based on created_at: swept at boot and every 15 minutes once older than 24h. Replace does not renew created_at.',
       '',
       'In both cases the uploaded extension is the one that ends up in `cdn_url`, and no `-thumb` variant exists.',
+      'Both modes still enforce the extension and content allowlist. Raw does not accept arbitrary files.',
       '',
       '## Public file URLs',
       '',
@@ -99,8 +100,8 @@ module.exports = {
           id: { type: 'integer', example: 2 },
           name: { type: 'string', example: 'posteacasa' },
           slug: { type: 'string', example: 'posteacasa', description: 'kebab-case lowercased name.' },
-          is_ephemeral: { type: 'integer', enum: [0, 1], example: 0, description: '1 = uploads bypass transcoding and auto-delete after 24h.' },
-          preserve_format: { type: 'integer', enum: [0, 1], example: 0, description: '1 = uploads stored byte-for-byte with their original extension, kept indefinitely. Independent of is_ephemeral.' },
+          is_ephemeral: { type: 'integer', enum: [0, 1], example: 0, description: '1 = passthrough; expiry from created_at after 24h, swept at boot/every 15 min. Replace does not renew TTL.' },
+          preserve_format: { type: 'integer', enum: [0, 1], example: 0, description: '1 = byte-preserving uploads, original extension, no variants. Permanent unless is_ephemeral is also 1; allowlist still applies.' },
           created_at: { type: 'string', format: 'date-time', example: '2026-04-12 18:33:00' },
           file_count: { type: 'integer', example: 142, description: 'Present only on GET /clients list responses.' },
         },
@@ -133,7 +134,7 @@ module.exports = {
       FileMinimal: {
         type: 'object',
         required: ['cdn_url'],
-        description: 'Response shape returned to API-key callers on upload/replace/cover. Internal IDs are not exposed.',
+        description: 'Success shape for client-key upload items and replace/cover/watermark objects. No separate id field here; GET /files does return id. Always use the returned cdn_url: replace preserves UUID, not necessarily extension/URL.',
         properties: {
           cdn_url: { type: 'string', format: 'uri', example: 'https://cdn.solutions45.com/2d310796-1022-44ab-98c3-17485f80966f.webp' },
         },
@@ -161,7 +162,7 @@ module.exports = {
       },
 
       UploadItemResult: {
-        oneOf: [
+        anyOf: [
           { $ref: '#/components/schemas/File' },
           { $ref: '#/components/schemas/FileMinimal' },
           {
@@ -185,7 +186,7 @@ module.exports = {
           key_preview: { type: 'string', example: '4f2a', description: 'Last 4 chars of the raw key, for identification.' },
           client_id: { type: 'integer', nullable: true, example: 2, description: 'NULL for admin keys.' },
           client_name: { type: 'string', nullable: true, example: 'posteacasa', description: 'NULL for admin keys.' },
-          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, no file access, client_id NULL).' },
+          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, global file metadata reads only; no file writes, client_id NULL).' },
           created_at: { type: 'string', format: 'date-time' },
           revoked_at: { type: 'string', format: 'date-time', nullable: true, description: 'Non-null = soft-deleted; auth lookups skip revoked keys.' },
         },
@@ -202,7 +203,7 @@ module.exports = {
           key_preview: { type: 'string', example: '4f2a' },
           client_id: { type: 'integer', nullable: true, example: 2, description: 'NULL for admin keys.' },
           client_name: { type: 'string', nullable: true, example: 'posteacasa', description: 'NULL for admin keys.' },
-          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, no file access, client_id NULL).' },
+          is_admin: { type: 'integer', enum: [0, 1], example: 0, description: '1 = admin key (client/key onboarding, global file metadata reads only; no file writes, client_id NULL).' },
         },
       },
 
@@ -257,6 +258,40 @@ module.exports = {
         ],
       },
 
+      WatermarkBody: {
+        type: 'object',
+        description: 'All fields optional. Numeric overrides are fractions coerced/clamped by the implementation, not rejected for being out of range. Defaults come from branding.watermark; text falls back to branding.watermarkText. No strict additional-property validation.',
+        properties: {
+          text: { type: 'string', description: 'Tiled text override; empty string falls back to brand text.' },
+          pattern_opacity: { type: 'number', description: 'Text opacity; branding patternOpacity or 0.30.' },
+          logo_opacity: { type: 'number', description: 'White logo opacity; branding logoOpacity or 0.60. Zero skips logo.' },
+          logo_width_pct: { type: 'number', description: 'Logo width / source width; branding logoWidthPct or 0.34.' },
+          logo_cx: { type: 'number', description: 'Logo center X / source width; default 0.5.' },
+          logo_cy: { type: 'number', description: 'Logo center Y / source height; default 0.5.' },
+        },
+        example: { logo_opacity: 0, pattern_opacity: 0.30 },
+      },
+
+      AdminMeResponse: {
+        type: 'object',
+        required: ['api_key', 'callable_endpoints', 'notes'],
+        properties: {
+          api_key: {
+            type: 'object',
+            required: ['id', 'name', 'key_preview', 'created_at', 'is_admin'],
+            properties: {
+              id: { type: 'integer' },
+              name: { type: 'string' },
+              key_preview: { type: 'string' },
+              created_at: { type: 'string' },
+              is_admin: { type: 'boolean', enum: [true] },
+            },
+          },
+          callable_endpoints: { type: 'array', items: { type: 'string' } },
+          notes: { type: 'array', items: { type: 'string' } },
+        },
+      },
+
       MeResponse: {
         type: 'object',
         description: 'Per-key configuration returned by GET /me. Tells the caller everything they need to know about their key: which client they belong to, the branding layout (default vs minimal), the body shape expected by cover endpoints, the watermark text, the logo URL, and which endpoints they can call.',
@@ -269,8 +304,8 @@ module.exports = {
               id: { type: 'integer', example: 6 },
               name: { type: 'string', example: 'tacos-elcamioncito' },
               slug: { type: 'string', example: 'tacos-elcamioncito' },
-              is_ephemeral: { type: 'boolean', example: false, description: 'true = uploads bypass transcoding and auto-delete after 24h.' },
-              preserve_format: { type: 'boolean', example: false, description: 'true = uploads stored byte-for-byte with their original extension, kept indefinitely.' },
+              is_ephemeral: { type: 'boolean', example: false, description: 'true = passthrough plus expiry from created_at after 24h, swept at boot/every 15 min. Replace does not renew TTL.' },
+              preserve_format: { type: 'boolean', example: false, description: 'true = byte-preserving uploads without variants. Permanent unless is_ephemeral is also true; allowlist still applies.' },
             },
           },
           api_key: {
@@ -288,7 +323,8 @@ module.exports = {
             required: ['layout', 'available_cover_formats', 'cover_body_example'],
             properties: {
               layout: { type: 'string', enum: ['default', 'minimal'], example: 'minimal', description: '`default` = real-estate-style cover (logo + gradient dim + info pills + operation/location text). `minimal` = logo top-right + diagonal text watermark only, source dimensions preserved.' },
-              available_cover_formats: { type: 'array', items: { type: 'string', enum: ['story', 'cover', 'square', 'fb'] }, example: ['story'], description: 'Whitelist of cover format endpoints the client can call. Formats not listed return 400.' },
+              available_cover_formats: { type: 'array', items: { type: 'string', enum: ['story', 'cover', 'square', 'fb', 'watermark'] }, example: ['story', 'watermark'], description: 'Whitelist of generation formats the client can call. Formats not listed return 400.' },
+              watermark_body_example: { type: 'object', description: 'Optional WatermarkBody example, present when watermark is enabled. Separate from the layout-specific cover_body_example.' },
               cover_body_example: { type: 'object', description: 'A valid example body for the cover endpoints. `{}` for `minimal` layout, a full CoverBody for `default`.' },
               watermark_text: { type: 'string', nullable: true, example: 'TACOS EL CAMIONCITO' },
               watermark_font: { type: 'string', nullable: true, example: "'Inter', sans-serif" },
@@ -411,7 +447,7 @@ module.exports = {
         responses: {
           200: {
             description: 'Per-key config.',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/MeResponse' } } },
+            content: { 'application/json': { schema: { anyOf: [{ $ref: '#/components/schemas/MeResponse' }, { $ref: '#/components/schemas/AdminMeResponse' }] } } },
           },
           401: { $ref: '#/components/responses/Unauthorized' },
           403: {
@@ -501,7 +537,7 @@ module.exports = {
       post: {
         tags: ['Clients'],
         summary: 'Create a new client. Session or admin key (client-scoped keys get 403).',
-        description: 'Two optional, independent flags — both fixed at create time, neither changeable via PATCH.\n\n- `preserve_format: true` → permanent raw vault: uploads stored byte-for-byte with their original extension, never expire.\n- `is_ephemeral: true` → temp client: same byte-for-byte storage, but every file auto-deletes 24h after upload.',
+        description: 'Two independent flags, fixed at create time (PATCH only renames). preserve_format:true stores bytes/extension without variants, permanently UNLESS is_ephemeral is also true. is_ephemeral:true also preserves bytes/extension but expires files older than 24h by created_at, swept at boot/every 15 min; replace does not renew TTL. Both modes still enforce extension/content validation.',
         security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
@@ -512,8 +548,8 @@ module.exports = {
                 required: ['name'],
                 properties: {
                   name: { type: 'string', example: 'new-client' },
-                  is_ephemeral: { type: 'boolean', default: false, description: 'Files auto-delete 24h after upload.' },
-                  preserve_format: { type: 'boolean', default: false, description: 'Store uploads byte-for-byte with their original extension. Permanent.' },
+                  is_ephemeral: { type: 'boolean', default: false, description: 'Passthrough plus 24h created_at-based expiry; swept at boot/every 15 min.' },
+                  preserve_format: { type: 'boolean', default: false, description: 'Byte-preserving uploads. Permanent unless is_ephemeral is also set.' },
                 },
               },
             },
@@ -601,7 +637,7 @@ module.exports = {
                 schema: {
                   type: 'array',
                   items: {
-                    oneOf: [
+                    anyOf: [
                       { $ref: '#/components/schemas/FileKeyView' },
                       { $ref: '#/components/schemas/File' },
                     ],
@@ -621,13 +657,13 @@ module.exports = {
         tags: ['Files'],
         summary: 'Upload one or more files.',
         description: [
-          'Multipart. Up to 20 files per request, 500 MB each. Rate limited to 60 uploads/min per API key (or per IP for session auth).',
+          'Multipart field files (plural). Up to 20 files per request, 500 MiB each. Upload and replace share 60 requests/min per client (or per IP for session auth). Admin keys return 403.',
           '',
-          '**For API key callers**: `client_id` is implicit (the key\'s client). Response is a minimal array `[{cdn_url}]` per file. Failed items show `{error}`.',
+          '**For client key callers**: `client_id` is implicit (the key\'s client). Response is a minimal array `[{cdn_url}]` per file. Failed items show `{error}`. HTTP 201 does NOT guarantee any or all items succeeded: inspect each result. GET /files includes id; upload does not.',
           '',
           '**For session callers**: `client_id` is required in the multipart body. Response is an array of full File objects.',
           '',
-          'Allowed extensions: `jpg/jpeg/png/gif/webp/avif/heic/heif` (images, re-encoded to WebP with `-thumb` variant), `mp4/mov/webm/mkv` (videos, re-encoded to MP4 H.264/AAC), `mp3`, `svg`, `lottie`. Images for ephemeral clients are passthrough (no re-encode). `.lottie` is passthrough regardless of client.',
+          'Allowed extensions: `jpg/jpeg/png/gif/webp/avif/heic/heif` (images to WebP with variants), `mp4/mov/webm/mkv` (MP4 passthrough, others to MP4 H.264/AAC), `mp3`, `svg`, `lottie`. Raw and ephemeral clients preserve bytes/extension without variants but still enforce extension/content validation. `.lottie` is always passthrough.',
         ].join('\n'),
         security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
         requestBody: {
@@ -647,6 +683,7 @@ module.exports = {
         },
         responses: {
           201: { description: 'Array of per-file results (success or error). Order matches input order.', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/UploadItemResult' } } } } },
+          403: { $ref: '#/components/responses/Forbidden' },
           400: { $ref: '#/components/responses/BadRequest' },
           401: { $ref: '#/components/responses/Unauthorized' },
           404: { $ref: '#/components/responses/NotFound' },
@@ -694,7 +731,7 @@ module.exports = {
             content: {
               'application/json': {
                 schema: {
-                  oneOf: [
+                  anyOf: [
                     { $ref: '#/components/schemas/FileKeyView' },
                     { $ref: '#/components/schemas/File' },
                   ],
@@ -745,7 +782,7 @@ module.exports = {
       post: {
         tags: ['Files'],
         summary: 'Replace a file in-place, preserving the UUID.',
-        description: 'The CDN URL stays valid (same UUID). The extension may change (e.g. legacy `.jpg` becomes `.webp` after replace). API key callers: ownership enforced (403 if file belongs to another client).',
+        description: 'Preserves UUID, original api_key_id and created_at, NOT necessarily the extension/URL. Always use the returned cdn_url (e.g. legacy .jpg becomes .webp, or raw .png becomes .jpg). Does not renew ephemeral expiry. Processes under a temporary UUID before exchanging files; this is not a complete filesystem/DB transaction. Session or client key in its own vault; admin keys return 403. Multipart field file (singular); success is an object, not an array.',
         security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
         requestBody: {
           required: true,
@@ -764,7 +801,7 @@ module.exports = {
         responses: {
           200: {
             description: 'Replaced. Returns full File for session, FileMinimal for API key.',
-            content: { 'application/json': { schema: { oneOf: [{ $ref: '#/components/schemas/File' }, { $ref: '#/components/schemas/FileMinimal' }] } } },
+            content: { 'application/json': { schema: { anyOf: [{ $ref: '#/components/schemas/File' }, { $ref: '#/components/schemas/FileMinimal' }] } } },
           },
           400: { $ref: '#/components/responses/BadRequest' },
           401: { $ref: '#/components/responses/Unauthorized' },
@@ -804,6 +841,31 @@ module.exports = {
     '/files/{id}/cover': makeCoverPath('cover', 1080, 1350, 'Instagram feed post'),
     '/files/{id}/square': makeCoverPath('square', 1080, 1080, 'Instagram square post'),
     '/files/{id}/fb': makeCoverPath('fb', 1080, 1080, 'Facebook post'),
+    '/files/{id}/watermark': {
+      parameters: [{ $ref: '#/components/parameters/FileId' }],
+      post: {
+        tags: ['Covers'],
+        summary: 'Create an anti-theft watermark image without replacing the master.',
+        description: 'Session or client key within its own vault; admin keys return 403. Source must be type=image and branding.formats must enable watermark (discover via GET /me). Tiled text and optional white logo with shadow; logo_opacity:0 skips the logo. The generator preserves source dimensions and produces WebP, then saves a NEW UUID through the vault storage policy: normal storage may resize, raw/ephemeral retain generated bytes; ephemeral output expires from its own created_at. Optional overrides fall back to branding/defaults. Numeric options are coerced/clamped to 0..1; non-finite values use defaults. No strict body type/range validation: send string text and numeric fractions. No position or real-estate fields. Rendering uses a 50,000,000-pixel input limit and a 30-second sharp timeout (not an end-to-end HTTP deadline). Shares the 30 generations/minute per-client cover limiter (per IP for session).',
+        security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
+        requestBody: {
+          required: false,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/WatermarkBody' } } },
+        },
+        responses: {
+          201: {
+            description: 'New file in the source vault; master unchanged. Client key returns {cdn_url}; session returns full file.',
+            content: { 'application/json': { schema: { anyOf: [{ $ref: '#/components/schemas/File' }, { $ref: '#/components/schemas/FileMinimal' }] } } },
+          },
+          400: { description: 'Source is not an image or watermark format is disabled for this client.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { $ref: '#/components/responses/Unauthorized' },
+          403: { $ref: '#/components/responses/Forbidden' },
+          404: { $ref: '#/components/responses/NotFound' },
+          429: { description: 'Shared cover generation rate limit exceeded.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          500: { description: 'Generation, source read or storage failed.', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
 
     // ---------- Overlay ----------
     '/overlay/generate': {
@@ -813,7 +875,7 @@ module.exports = {
         description: [
           'Returns the PNG buffer directly (Content-Type: image/png). NOT saved to luna — caller decides what to do with it. Used by video-forge for FFmpeg compositing onto videos.',
           '',
-          'Rate limited to 30 generations/min per API key (or per IP).',
+          'Rate limited to 30 generations/min per client (or per IP). Admin keys return 403.',
         ].join('\n'),
         security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
         requestBody: {
@@ -933,21 +995,21 @@ function makeCoverPath(format, width, height, description) {
         '',
         `If the client's \`formats\` array does not include \`'${format}'\`, returns 400.`,
         '',
-        `Source file must be \`type='image'\`. Rate limited to 30 generations/min per API key (or per IP).`,
+        `Source file must be \`type='image'\`. Rate limited to 30 generations/min per client (or per IP); shares the limiter with watermark. Admin keys return 403.`,
       ].join('\n'),
       security: [{ apiKeyAuth: [] }, { cookieAuth: [] }],
       requestBody: {
         required: false,
         content: {
           'application/json': {
-            schema: { oneOf: [{ $ref: '#/components/schemas/CoverBody' }, { $ref: '#/components/schemas/MinimalCoverBody' }] },
+            schema: { anyOf: [{ $ref: '#/components/schemas/CoverBody' }, { $ref: '#/components/schemas/MinimalCoverBody' }] },
           },
         },
       },
       responses: {
         201: {
           description: 'Cover generated.',
-          content: { 'application/json': { schema: { oneOf: [{ $ref: '#/components/schemas/File' }, { $ref: '#/components/schemas/FileMinimal' }] } } },
+          content: { 'application/json': { schema: { anyOf: [{ $ref: '#/components/schemas/File' }, { $ref: '#/components/schemas/FileMinimal' }] } } },
         },
         400: { $ref: '#/components/responses/BadRequest' },
         401: { $ref: '#/components/responses/Unauthorized' },

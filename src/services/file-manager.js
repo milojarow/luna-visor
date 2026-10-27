@@ -223,7 +223,8 @@ async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) 
   // but processUpload writes to MEDIA_FILES_PATH directly — clean tempPath here too.
   try { fs.unlinkSync(tempPath); } catch {}
 
-  // Pipeline succeeded: now atomically swap. Same filesystem, so rename is fast.
+  // Pipeline succeeded: exchange files. Each rename is atomic on this filesystem,
+  // but removing originals, renaming variants and updating SQLite is NOT one transaction.
   // Remove the originals and rename temp outputs onto the original UUID.
   const oldFiles = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
   for (const f of oldFiles) {

@@ -33,11 +33,11 @@ router.get('/', (req, res) => {
         'GET /api/files/{id}',
       ],
       notes: [
-        'Admin key: onboarding + key lifecycle — create/rename clients, mint/rename/revoke client-scoped keys. File operations require a client-scoped key.',
+        'Admin key: onboarding + key lifecycle — create/rename clients, mint/rename/revoke client-scoped keys. File writes require a client-scoped key; global metadata reads are allowed.',
         'GET /api/files and GET /api/files/{id} are READ-ONLY and cross-client: every file of every client, each row carrying client_id + client_name. Filter with ?client_id=N; page with ?limit=&offset= (both optional, no default).',
         'Writing files is closed to admin keys: upload, replace, delete, copy, move and cover generation all return 403. Mint a client-scoped key for that.',
         'POST /api/clients body: { name, is_ephemeral?, preserve_format? }. Returns 201 with the client row; 409 if the name already exists.',
-        'preserve_format: true creates a permanent raw vault — uploads are stored byte-for-byte with their original extension (no WebP/MP4 conversion, no thumbnails) and never expire. Orthogonal to is_ephemeral, which is the 24h TTL. Both flags are create-time only; PATCH cannot change them.',
+        'preserve_format: true stores bytes and extension without conversion/variants, permanently unless is_ephemeral is also true. is_ephemeral also preserves format and sweeps files older than 24h by created_at, at boot/every 15 min; replace does not renew TTL. Both flags are create-time only; PATCH cannot change them. Extension/content allowlist still applies.',
         'PATCH /api/clients/{id} body: { name }. Renames the client (slug re-derives); 409 on name collision.',
         'POST /api/api-keys body: { name, client_id }. The raw key is returned ONCE — deliver it to the client app immediately.',
         'PATCH /api/api-keys/{id} body: { name }, and DELETE /api/api-keys/{id} (revoke, soft delete, immediate) — CLIENT keys only. Admin keys 403 — they are WUI-managed.',
@@ -66,6 +66,10 @@ router.get('/', (req, res) => {
     watermark_font: brand.watermarkFont || null,
   };
 
+  if (brand.formats?.includes('watermark')) {
+    branding.watermark_body_example = { logo_opacity: 0 };
+  }
+
   if (brand.logoImagePath) {
     const filename = path.basename(brand.logoImagePath);
     branding.logo_cdn_url = `${config.CDN_BASE_URL}/${filename}`;
@@ -89,14 +93,17 @@ router.get('/', (req, res) => {
   const notes = [
     'GET /api/files lists this client\'s vault and nothing else — the scope comes from the key, so no client_id is needed (and a foreign one is rejected). Page with ?limit=&offset= (both optional, no default). GET /api/files/{id} returns one file, 403 if it belongs to another client.',
     'cdn_url returned from upload/cover endpoints is always public (https://cdn.solutions45.com/<uuid>.<ext>).',
+    'Upload uses multipart files (plural) and returns HTTP 201 with an array of {cdn_url} or {error} per item; inspect every item. GET /api/files includes id. Replace uses multipart file (singular) and returns an object {cdn_url}; preserves UUID but extension/URL can change: always use the returned cdn_url.',
+    brand.formats?.includes('watermark') ? 'POST /api/files/{id}/watermark has its own optional WatermarkBody (not CoverBody): text, pattern_opacity, logo_opacity, logo_width_pct, logo_cx, logo_cy. Fractions are clamped to 0..1. New UUID, master unchanged; generator preserves dimensions, then the vault storage policy applies. See /api/openapi.json.' : null,
     isMinimal
       ? 'Cover endpoint accepts body `{}` (defaults to top-right) or `{position: "..."}` to choose a corner. Source dimensions are preserved.'
-      : 'Cover endpoint requires a full CoverBody — see /openapi.json#components/schemas/CoverBody.',
+      : 'Cover endpoint requires a full CoverBody — see /api/openapi.json#components/schemas/CoverBody. Watermark, if enabled, uses a separate optional body.',
     isMinimal
       ? 'If the source image already has a logo in one corner, inspect it and pass a different `position` value to avoid overlapping the existing logo. Pass `"none"` to skip the logo entirely (watermark only) when the source already has a prominent brand mark.'
       : null,
-    client.is_ephemeral === 1 ? 'This is an ephemeral client — uploads bypass transcoding and auto-delete after 24h.' : null,
-    client.preserve_format === 1 ? 'This is a preserve-format client — uploads are stored byte-for-byte with their original extension (no WebP/MP4 conversion, no -thumb variant) and are kept indefinitely. The uploaded extension is the one in cdn_url.' : null,
+    'Vault flags are create-time only. Raw/ephemeral still enforce extension and content validation.',
+    client.is_ephemeral === 1 ? 'This is an ephemeral client — uploads preserve bytes/extension with no variants; files older than 24h by created_at are swept at boot and every 15 minutes. Replace does not renew created_at or expiry.' : null,
+    client.preserve_format === 1 ? 'This is a preserve-format client — uploads are stored byte-for-byte with their original extension (no WebP/MP4 conversion, no -thumb variant). Permanent unless is_ephemeral is also true. Always use the returned cdn_url.' : null,
   ].filter(Boolean);
 
   res.json({

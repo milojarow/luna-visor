@@ -77,6 +77,7 @@ const ApiKeysPage = {
       const row = document.createElement('div');
       const revoked = !!k.revoked_at;
       row.className = revoked ? 'api-key-row api-key-row-revoked' : 'api-key-row';
+      if (k.is_admin) row.classList.add('api-key-row-admin');
       row.dataset.id = k.id;
       const dateStr = new Date(k.created_at + 'Z').toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
@@ -102,7 +103,7 @@ const ApiKeysPage = {
       const clientObj = App.clients.find(c => c.id === k.client_id);
       const clientIcon = clientObj ? clientFlagIcons(clientObj, 'client-flag-icon') : '';
       const clientLabel = k.is_admin
-        ? '<span class="api-key-admin-badge">Admin</span>'
+        ? '<span class="api-key-admin-badge"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.5 13.5 4v4c0 3-3.4 5.5-5.5 6.5C5.9 13.5 2.5 11 2.5 8V4z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="m5 6 1 3h4l1-3-2 1-1-2-1 2z" fill="currentColor"/></svg>Admin</span>'
         : `${clientIcon}${escapeHtml(k.client_name)}`;
       row.innerHTML = `
         <div class="api-key-info">
@@ -116,6 +117,7 @@ const ApiKeysPage = {
             <span class="api-key-meta-sep">·</span>
             <span class="api-key-date">Created ${dateStr}</span>
             ${revokedBadge}
+            ${k.is_admin && !revoked ? '<span class="api-key-active-badge">Active</span>' : ''}
           </div>
         </div>
         ${deleteBtn}
