@@ -3,6 +3,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db/connection');
 const config = require('../config');
+const privateFiles = require('./private-files');
 const { processImageWithPolicy, convertVideoToMp4, extractThumbnail } = require('./file-processor');
 const { getImagePolicy } = require('./branding');
 
@@ -110,6 +111,7 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
 }
 
 async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId, apiKeyId = null) {
+  if (privateFiles.clientIsPrivate(clientId)) return privateFiles.savePrivate(tempPath, originalName, clientId, apiKeyId);
   const ext = path.extname(originalName).slice(1).toLowerCase();
   const type = getFileType(ext);
   if (!type) {
@@ -139,6 +141,8 @@ function deleteFile(fileId) {
   const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   if (!file) return null;
 
+  if (privateFiles.fileIsPrivate(fileId)) return privateFiles.deletePrivate(file);
+
   const matches = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
   for (const f of matches) {
     try { fs.unlinkSync(path.join(config.MEDIA_FILES_PATH, f)); } catch {}
@@ -149,6 +153,7 @@ function deleteFile(fileId) {
 }
 
 function moveFile(fileId, targetClientId) {
+  privateFiles.checkTransfer(fileId, targetClientId);
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(targetClientId);
   if (!client) return null;
 
@@ -160,11 +165,14 @@ function moveFile(fileId, targetClientId) {
 }
 
 async function copyFile(fileId, targetClientId) {
+  privateFiles.checkTransfer(fileId, targetClientId);
   const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   if (!file) return null;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(targetClientId);
   if (!client) return null;
+
+  if (privateFiles.fileIsPrivate(fileId)) return privateFiles.copyPrivate(file, targetClientId);
 
   const newUuid = uuidv4();
   const matches = fs.readdirSync(config.MEDIA_FILES_PATH).filter(f => f.startsWith(fileId));
@@ -187,6 +195,7 @@ async function copyFile(fileId, targetClientId) {
 }
 
 async function replaceFile(fileId, tempPath, originalName, mimeType, sizeBytes) {
+  if (privateFiles.fileIsPrivate(fileId)) return privateFiles.replacePrivate(fileId, tempPath, originalName);
   const existing = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   if (!existing) {
     try { fs.unlinkSync(tempPath); } catch {}

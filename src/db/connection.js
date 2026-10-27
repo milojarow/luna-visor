@@ -129,4 +129,29 @@ try {
   console.error('Migration FAILED (api_keys admin rebuild):', e.message);
 }
 
+
+// Private vault policy is immutable after creation. Default preserves every existing vault.
+if (!db.prepare('PRAGMA table_info(clients)').all().some(c => c.name === 'is_private')) {
+  db.exec('ALTER TABLE clients ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0');
+}
+// Arbitrary private attachments are downloads, never publicly executable content.
+// Rebuild the CHECK with the existing columns so audit attribution survives upgrades.
+{
+  const schema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='files'").get().sql;
+  if (!schema.includes("'document'")) {
+    const columns = db.prepare('PRAGMA table_info(files)').all().map(c => '"' + c.name + '"').join(',');
+    const create = schema.replace(/CREATE TABLE ["`]?files["`]?/i, 'CREATE TABLE files_private_upgrade')
+      .replace("'lottie'", "'lottie', 'document'");
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(create);
+        db.exec(`INSERT INTO files_private_upgrade (${columns}) SELECT ${columns} FROM files`);
+        db.exec('DROP TABLE files');
+        db.exec('ALTER TABLE files_private_upgrade RENAME TO files');
+      })();
+    } finally { db.pragma('foreign_keys = ON'); }
+  }
+}
+
 module.exports = db;

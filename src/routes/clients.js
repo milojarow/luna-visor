@@ -29,17 +29,20 @@ router.get('/', requireClientListAccess, (req, res) => {
 });
 
 router.post('/', requireSessionOrAdmin, (req, res) => {
-  const { name, is_ephemeral, preserve_format } = req.body;
+  const { name, is_ephemeral, preserve_format, is_private } = req.body;
+  if (is_private !== undefined && typeof is_private !== "boolean") return res.status(400).json({error:"is_private must be boolean"});
+  if (is_private && !require("../config").LUNA_BASE_URL) return res.status(503).json({error:"Private vault API origin is not configured"});
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name required' });
   }
   const slug = slugify(name.trim());
   const ephemeralFlag = is_ephemeral ? 1 : 0;
   // Orthogonal to is_ephemeral: this one only turns off transcoding, it never expires anything.
-  const preserveFlag = preserve_format ? 1 : 0;
+  const preserveFlag = preserve_format || is_private ? 1 : 0;
+  const privateFlag = is_private ? 1 : 0;
   try {
-    const result = db.prepare('INSERT INTO clients (name, slug, is_ephemeral, preserve_format) VALUES (?, ?, ?, ?)')
-      .run(name.trim(), slug, ephemeralFlag, preserveFlag);
+    const result = db.prepare('INSERT INTO clients (name, slug, is_ephemeral, preserve_format, is_private) VALUES (?, ?, ?, ?, ?)')
+      .run(name.trim(), slug, ephemeralFlag, preserveFlag, privateFlag);
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(client);
   } catch (err) {

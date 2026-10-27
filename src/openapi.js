@@ -6,9 +6,9 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.11.0',
+    version: '1.12.0',
     description: [
-      'CDN manager for solutions45.com. Files uploaded here are stored on disk and served publicly at https://cdn.solutions45.com/{uuid}.{ext}.',
+      'CDN manager for solutions45.com. Public vaults deliver files at https://cdn.solutions45.com/{uuid}.{ext}. Private vaults keep bytes outside that directory and require client-scoped authorization at GET /api/files/{id}/content.',
       '',
       '## Authentication',
       '',
@@ -95,12 +95,13 @@ module.exports = {
 
       Client: {
         type: 'object',
-        required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format'],
+        required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format', 'is_private'],
         properties: {
           id: { type: 'integer', example: 2 },
           name: { type: 'string', example: 'posteacasa' },
           slug: { type: 'string', example: 'posteacasa', description: 'kebab-case lowercased name.' },
           is_ephemeral: { type: 'integer', enum: [0, 1], example: 0, description: '1 = passthrough; expiry from created_at after 24h, swept at boot/every 15 min. Replace does not renew TTL.' },
+          is_private: { type: 'integer', enum:[0,1], description:'1 = private authenticated content; never stored in the public CDN root.' },
           preserve_format: { type: 'integer', enum: [0, 1], example: 0, description: '1 = byte-preserving uploads, original extension, no variants. Permanent unless is_ephemeral is also 1; allowlist still applies.' },
           created_at: { type: 'string', format: 'date-time', example: '2026-04-12 18:33:00' },
           file_count: { type: 'integer', example: 142, description: 'Present only on GET /clients list responses.' },
@@ -120,7 +121,7 @@ module.exports = {
           api_key_id: { type: 'integer', nullable: true, example: 7, description: 'Which API key uploaded this file. NULL for session uploads and pre-2026-05-09 rows.' },
           api_key_name: { type: 'string', nullable: true, example: 'key para posteacasa', description: 'Joined from api_keys table.' },
           api_key_revoked_at: { type: 'string', format: 'date-time', nullable: true, description: 'Non-null if the key that uploaded this file has been revoked.' },
-          type: { type: 'string', enum: ['image', 'video', 'audio', 'vector', 'lottie'], example: 'image' },
+          type: { type: 'string', enum: ['image', 'video', 'audio', 'vector', 'lottie', 'document'], example: 'image' },
           has_thumbnail: { type: 'integer', enum: [0, 1], example: 0, description: '1 if a -thumb.jpg variant exists (videos).' },
           has_resized: { type: 'integer', enum: [0, 1], example: 1, description: '1 if image variants (-thumb.webp, -md.webp) exist.' },
           referenced: { type: 'integer', enum: [0, 1], example: 1, description: '1 once the CDN log scanner has seen this file fetched.' },
@@ -153,7 +154,7 @@ module.exports = {
           extension: { type: 'string', example: 'webp' },
           mime_type: { type: 'string', example: 'image/webp' },
           size_bytes: { type: 'integer', example: 184523 },
-          type: { type: 'string', enum: ['image', 'video', 'audio', 'vector', 'lottie'], example: 'image' },
+          type: { type: 'string', enum: ['image', 'video', 'audio', 'vector', 'lottie', 'document'], example: 'image' },
           has_thumbnail: { type: 'integer', enum: [0, 1], example: 0, description: '1 if a -thumb.jpg variant exists (videos).' },
           has_resized: { type: 'integer', enum: [0, 1], example: 1, description: '1 if image variants (-thumb.webp, -md.webp) exist.' },
           referenced: { type: 'integer', enum: [0, 1], example: 1, description: '1 once the CDN log scanner has seen this file fetched.' },
@@ -299,12 +300,13 @@ module.exports = {
         properties: {
           client: {
             type: 'object',
-            required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format'],
+            required: ['id', 'name', 'slug', 'is_ephemeral', 'preserve_format', 'is_private'],
             properties: {
               id: { type: 'integer', example: 6 },
               name: { type: 'string', example: 'tacos-elcamioncito' },
               slug: { type: 'string', example: 'tacos-elcamioncito' },
               is_ephemeral: { type: 'boolean', example: false, description: 'true = passthrough plus expiry from created_at after 24h, swept at boot/every 15 min. Replace does not renew TTL.' },
+              is_private: { type:'boolean', example:false, description:'Private authenticated API URLs, no public CDN copies.' },
               preserve_format: { type: 'boolean', example: false, description: 'true = byte-preserving uploads without variants. Permanent unless is_ephemeral is also true; allowlist still applies.' },
             },
           },
@@ -537,7 +539,7 @@ module.exports = {
       post: {
         tags: ['Clients'],
         summary: 'Create a new client. Session or admin key (client-scoped keys get 403).',
-        description: 'Two independent flags, fixed at create time (PATCH only renames). preserve_format:true stores bytes/extension without variants, permanently UNLESS is_ephemeral is also true. is_ephemeral:true also preserves bytes/extension but expires files older than 24h by created_at, swept at boot/every 15 min; replace does not renew TTL. Both modes still enforce extension/content validation.',
+        description: 'Create-only policies (PATCH only renames). Public preserve_format:true stores original bytes/extension under the upload allowlist. is_ephemeral:true expires files older than 24h, swept at boot/every15min; replace does not renew TTL. is_private:true forces byte preservation and stores attachments outside the public root; any format is accepted but non-raster/media types download safely. Private uploads require configured LUNA_BASE_URL.',
         security: [{ cookieAuth: [] }, { apiKeyAuth: [] }],
         requestBody: {
           required: true,
@@ -549,6 +551,7 @@ module.exports = {
                 properties: {
                   name: { type: 'string', example: 'new-client' },
                   is_ephemeral: { type: 'boolean', default: false, description: 'Passthrough plus 24h created_at-based expiry; swept at boot/every 15 min.' },
+                  is_private: { type:'boolean', default:false, description:'Create-only: private byte-preserving vault outside public CDN. Requires configured LUNA_BASE_URL. Any attachment type is accepted, non-raster/media content is served as download. No public/private move or copy.' },
                   preserve_format: { type: 'boolean', default: false, description: 'Byte-preserving uploads. Permanent unless is_ephemeral is also set.' },
                 },
               },
@@ -717,6 +720,15 @@ module.exports = {
           403: { $ref: '#/components/responses/Forbidden' },
         },
       },
+    },
+    '/files/{id}/content': {
+      parameters: [{ $ref: '#/components/parameters/FileId' }],
+      get: {
+        tags: ['Files'], summary:'Read private bytes with client-scoped authorization.',
+        description:'Owner session, partner in the vault scope, or its client key. Admin keys are denied. Arbitrary documents download with nosniff and sandbox; raster images/audio/video may render inline. Private no-store responses. HEAD and byte Range supported. Public vaults return404. No API key may be embedded in browser code.',
+        security:[{apiKeyAuth:[]},{cookieAuth:[]}],
+        responses:{200:{description:'Private file bytes.',content:{'application/octet-stream':{schema:{type:'string',format:'binary'}}}},206:{description:'Authorized byte range.'},401:{$ref:'#/components/responses/Unauthorized'},403:{$ref:'#/components/responses/Forbidden'},404:{$ref:'#/components/responses/NotFound'},416:{description:'Range not satisfiable.'}}
+      }
     },
     '/files/{id}': {
       parameters: [{ $ref: '#/components/parameters/FileId' }],

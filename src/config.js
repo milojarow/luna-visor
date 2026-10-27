@@ -16,6 +16,8 @@ module.exports = {
   ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH,
   MEDIA_PATH: process.env.MEDIA_PATH,
   MEDIA_FILES_PATH: path.join(process.env.MEDIA_PATH, 'files'),
+  // Private bytes never enter the directory served by Caddy.
+  MEDIA_PRIVATE_PATH: path.join(process.env.MEDIA_PATH, 'private-files'),
   MEDIA_DB_PATH: path.join(process.env.MEDIA_PATH, 'db'),
   CDN_BASE_URL: process.env.CDN_BASE_URL.replace(/\/$/, ''),
   LUNA_BASE_URL: process.env.LUNA_BASE_URL ? process.env.LUNA_BASE_URL.replace(/\/$/, '') : null,

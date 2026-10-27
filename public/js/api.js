@@ -23,6 +23,7 @@ const API = {
   createClient(name, opts = {}) {
     return this.request('POST', '/api/clients', {
       name,
+      is_private: !!opts.private,
       is_ephemeral: !!opts.ephemeral,
       preserve_format: !!opts.preserveFormat,
     });

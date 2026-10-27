@@ -46,9 +46,9 @@ router.get('/', (req, res) => {
     });
   }
 
-  const client = db.prepare('SELECT id, name, slug, is_ephemeral, preserve_format FROM clients WHERE id = ?').get(req.apiKeyClientId);
+  const client = db.prepare('SELECT id, name, slug, is_ephemeral, preserve_format, is_private FROM clients WHERE id = ?').get(req.apiKeyClientId);
   const apiKey = db.prepare('SELECT id, name, key_preview, created_at FROM api_keys WHERE id = ?').get(req.apiKeyId);
-  const brand = getBranding(client.id);
+  const brand = client.is_private ? { ...getBranding(client.id), formats: [] } : getBranding(client.id);
 
   const isMinimal = brand.layout === 'minimal';
   const branding = {
@@ -83,6 +83,7 @@ router.get('/', (req, res) => {
   const callable = [
     'GET /api/files',
     'GET /api/files/{id}',
+    ...(client.is_private ? ['GET /api/files/{id}/content'] : []),
     'POST /api/files/upload',
     'POST /api/files/{id}/replace',
     'DELETE /api/files/{id}',
@@ -92,7 +93,7 @@ router.get('/', (req, res) => {
 
   const notes = [
     'GET /api/files lists this client\'s vault and nothing else — the scope comes from the key, so no client_id is needed (and a foreign one is rejected). Page with ?limit=&offset= (both optional, no default). GET /api/files/{id} returns one file, 403 if it belongs to another client.',
-    'cdn_url returned from upload/cover endpoints is always public (https://cdn.solutions45.com/<uuid>.<ext>).',
+    client.is_private ? 'Private bytes are stored outside the public CDN directory. cdn_url is an authenticated API content URL; send your client key server-side, never expose it in browser code. Public CDN guesses return no private bytes. Range/HEAD supported; responses are private, no-store.' : 'cdn_url returned from public-vault upload/cover endpoints is public (https://cdn.solutions45.com/<uuid>.<ext>).',
     'Upload uses multipart files (plural) and returns HTTP 201 with an array of {cdn_url} or {error} per item; inspect every item. GET /api/files includes id. Replace uses multipart file (singular) and returns an object {cdn_url}; preserves UUID but extension/URL can change: always use the returned cdn_url.',
     brand.formats?.includes('watermark') ? 'POST /api/files/{id}/watermark has its own optional WatermarkBody (not CoverBody): text, pattern_opacity, logo_opacity, logo_width_pct, logo_cx, logo_cy. Fractions are clamped to 0..1. New UUID, master unchanged; generator preserves dimensions, then the vault storage policy applies. See /api/openapi.json.' : null,
     isMinimal
@@ -113,6 +114,7 @@ router.get('/', (req, res) => {
       slug: client.slug,
       is_ephemeral: client.is_ephemeral === 1,
       preserve_format: client.preserve_format === 1,
+      is_private: client.is_private === 1,
     },
     api_key: {
       id: apiKey.id,

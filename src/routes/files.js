@@ -5,6 +5,7 @@ const multer = require('multer');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const db = require('../db/connection');
 const config = require('../config');
+const privateFiles = require('../services/private-files');
 const { saveFile, deleteFile, moveFile, copyFile, replaceFile } = require('../services/file-manager');
 const { generateCover, generateWatermark, getBranding, MINIMAL_LOGO_POSITIONS } = require('../services/cover-generator');
 const { requireSession, blockAdminKeys, callerScope } = require('../middleware/auth');
@@ -48,7 +49,7 @@ const router = Router();
 
 function fileToResponse(file) {
   if (!file) return null;
-  const cdnUrl = `${config.CDN_BASE_URL}/${file.id}.${file.extension}`;
+  const cdnUrl = privateFiles.fileUrl(file);
   return { ...file, cdn_url: cdnUrl };
 }
 
@@ -59,7 +60,7 @@ function fileToKeyResponse(file, includeClientName) {
   if (!file) return null;
   const out = {
     id: file.id,
-    cdn_url: `${config.CDN_BASE_URL}/${file.id}.${file.extension}`,
+    cdn_url: privateFiles.fileUrl(file),
     client_id: file.client_id,
   };
   if (includeClientName) out.client_name = file.client_name;
@@ -98,7 +99,7 @@ function apiKeyIdFor(req, clientId) {
 
 const FILE_SELECT = `
   SELECT f.*, ak.name AS api_key_name, ak.revoked_at AS api_key_revoked_at,
-         c.name AS client_name, c.is_ephemeral AS client_is_ephemeral
+         c.name AS client_name, c.is_ephemeral AS client_is_ephemeral, c.is_private AS client_is_private
   FROM files f
   LEFT JOIN api_keys ak ON ak.id = f.api_key_id
   LEFT JOIN clients c ON c.id = f.client_id
@@ -167,6 +168,22 @@ router.get('/', (req, res) => {
   res.json(files.map(fileToResponse));
 });
 
+router.get('/:id/content', blockAdminKeys, (req, res) => {
+  const file = db.prepare('SELECT * FROM files WHERE id=?').get(req.params.id);
+  if (!file || !privateFiles.clientIsPrivate(file.client_id)) return res.status(404).json({error:'Private file not found'});
+  const scope = callerScope(req);
+  if (scope && !scope.includes(file.client_id)) return res.status(403).json({error:'Access denied'});
+  const inline = /^(image\/(png|jpeg|webp|gif|avif)|audio\/|video\/)/.test(file.mime_type);
+  // Never execute private HTML, SVG or arbitrary attachments in the API origin.
+  res.set({ 'Cache-Control':'private, no-store', 'Pragma':'no-cache', 'Vary':'X-API-Key, Cookie',
+    'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'no-referrer',
+    'Content-Security-Policy':"sandbox; default-src 'none'", 'Content-Type':file.mime_type,
+    'Content-Disposition':`${inline?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(file.original_name).replace(/'/g,'%27')}` });
+  res.sendFile(privateFiles.disk(file), {cacheControl:false,lastModified:false}, err => {
+    if (err && !res.headersSent) res.status(err.statusCode || 500).json({error:'File unavailable'});
+  });
+});
+
 router.get('/:id', (req, res) => {
   const file = db.prepare(`${FILE_SELECT} WHERE f.id = ?`).get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
@@ -217,7 +234,7 @@ router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res
   const results = [];
   for (const f of req.files) {
     try {
-      await validateUpload(f.path, f.originalname);
+      if (!privateFiles.clientIsPrivate(client_id)) await validateUpload(f.path, f.originalname);
       const cleanName = sanitizeOriginalName(f.originalname);
       const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id, apiKeyIdFor(req, client_id));
       results.push(fileToResponse(file));
@@ -267,7 +284,7 @@ router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, re
     return res.status(400).json({ error: 'File required' });
   }
   try {
-    await validateUpload(req.file.path, req.file.originalname);
+    if (!privateFiles.fileIsPrivate(req.params.id)) await validateUpload(req.file.path, req.file.originalname);
     const cleanName = sanitizeOriginalName(req.file.originalname);
     const file = await replaceFile(req.params.id, req.file.path, cleanName, req.file.mimetype, req.file.size);
     if (!file) return res.status(404).json({ error: 'File not found' });
@@ -294,6 +311,7 @@ async function handleCoverGeneration(req, res, format, width, height) {
   if (scope && !scope.includes(file.client_id)) {
     return res.status(403).json({ error: 'Access denied' });
   }
+  if (privateFiles.clientIsPrivate(file.client_id)) return res.status(409).json({error:'Derived public media is disabled for private vaults'});
   if (file.type !== 'image') {
     return res.status(400).json({ error: 'Source file must be an image' });
   }
@@ -338,6 +356,7 @@ router.post('/:id/watermark', coverLimiter, async (req, res) => {
   if (scope && !scope.includes(file.client_id)) {
     return res.status(403).json({ error: 'Access denied' });
   }
+  if (privateFiles.clientIsPrivate(file.client_id)) return res.status(409).json({error:'Derived public media is disabled for private vaults'});
   if (file.type !== 'image') {
     return res.status(400).json({ error: 'Source file must be an image' });
   }

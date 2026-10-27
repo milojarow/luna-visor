@@ -1,6 +1,7 @@
 // Client-level storage flags, rendered the same way everywhere they show up.
 // is_ephemeral and preserve_format are independent; a client can carry both.
 const CLIENT_FLAGS = [
+  { key: 'is_private', icon: '/file-lock.svg', text: '🔐', title: 'Vault privado: requiere autorización, sin URL pública' },
   { key: 'is_ephemeral', icon: '/calendar-clock.svg', text: '⏱', title: 'Cliente temporal (24h)' },
   { key: 'preserve_format', icon: '/file-lock.svg', text: '🔒', title: 'Vault sin conversión (formato original, permanente)' },
 ];
@@ -67,6 +68,9 @@ const App = {
     document.getElementById('btn-add-client-caret').addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleDropup();
+    });
+    document.getElementById('btn-add-private-client').addEventListener('click', () => {
+      this.promptNewClient({ private: true });
     });
     document.getElementById('btn-add-ephemeral-client').addEventListener('click', () => {
       this.closeDropup();
@@ -164,7 +168,10 @@ const App = {
   async promptNewClient(opts = {}) {
     let title = 'New Client';
     let description = '';
-    if (opts.ephemeral) {
+    if (opts.private) {
+      title = 'Nuevo vault privado';
+      description = 'Los archivos conservan sus bytes fuera del CDN público. Para leerlos se necesita autorización de este vault. No caducan salvo que también se solicite contenido efímero por API.';
+    } else if (opts.ephemeral) {
       title = 'Nuevo cliente de contenido efímero';
       description = 'El cliente y sus API keys son permanentes como los demás. Lo que se autoborra es cada archivo que se suba aquí: 24 horas después del upload, luna lo elimina del CDN automáticamente.';
     } else if (opts.preserveFormat) {

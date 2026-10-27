@@ -67,7 +67,7 @@ const Gallery = {
       // -thumb/-normal variant, so the original is the only rendition on disk.
       const img = document.createElement('img');
       img.className = 'file-card-preview';
-      img.src = `${this.cdnBase}/${file.id}.${file.extension}`;
+      img.src = file.cdn_url;
       img.alt = file.original_name;
       img.loading = 'lazy';
       previewContainer.appendChild(img);
