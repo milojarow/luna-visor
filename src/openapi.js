@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.14.0',
+    version: '1.15.0',
     description: [
       'CDN manager for solutions45.com. Public vaults deliver files at https://cdn.solutions45.com/{uuid}.{ext}. Private vaults keep bytes outside that directory and require client-scoped authorization at GET /api/files/{id}/content.',
       '',
@@ -721,6 +721,9 @@ module.exports = {
           403: { $ref: '#/components/responses/Forbidden' },
         },
       },
+    },
+    '/files/render-blindando': {
+      post:{tags:['Files'],summary:'Render the original Blindando post template inside Luna.',description:'Only the dedicated public ephemeral blindando-post-preview-temporal vault. One bounded worker, eight queued requests, 20 new renders per minute, 2GiB quota and 1GiB disk reserve. Original typography/layout, 1080x1080 or IG1080x1350, WebP88, public jobs and 23h cache; no Vercel image processing. Never private media.',security:[{apiKeyAuth:[]},{cookieAuth:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['headline','product'],properties:{headline:{type:'string',maxLength:400},product:{type:'string',maxLength:120},bullets:{oneOf:[{type:'string'},{type:'array',maxItems:4,items:{type:'string',maxLength:240}}]},color:{type:'string',pattern:'^#[0-9a-fA-F]{6}$'},bg:{type:'string',format:'uri',description:'Public Luna raster image only.'},format:{type:'string',enum:['square','ig']},client_id:{type:'integer'}}}}}},responses:{200:{description:'Cached id,cdn_url.'},202:{description:'Pending public poll_url. Follow GET redirects for final WebP.'},400:{$ref:'#/components/responses/BadRequest'},401:{$ref:'#/components/responses/Unauthorized'},403:{$ref:'#/components/responses/Forbidden'},429:{description:'Too many renders.'},507:{description:'Storage reserve reached.'}}}
     },
     '/files/import-meta': {
       post: {

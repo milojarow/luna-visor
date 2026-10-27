@@ -205,6 +205,14 @@ router.get('/:id', (req, res) => {
 // ---------------------------------------------------------------------------
 router.use(blockAdminKeys);
 
+router.post('/render-blindando', async(req,res)=>{
+  const scope=callerScope(req),clientId=scope===null?Number(req.body?.client_id):scope.length===1?scope[0]:Number(req.body?.client_id);
+  if(!Number.isSafeInteger(clientId)||clientId<1)return res.status(400).json({error:'client_id required'});
+  if(scope&&!scope.includes(clientId))return res.status(403).json({error:'Access denied'});
+  try{const result=require('../services/blindando-render').requestRender(req.body,clientId,apiKeyIdFor(req,clientId));res.set('Cache-Control','no-store');return res.status(result.status).json(result.body);}
+  catch(error){return res.status(error.status||502).json({error:error.status?error.message:'Render unavailable'});}
+});
+
 router.post('/import-meta', async(req,res)=>{
   const scope=callerScope(req);
   let clientId=scope===null?Number(req.body?.client_id):scope.length===1?scope[0]:Number(req.body?.client_id);

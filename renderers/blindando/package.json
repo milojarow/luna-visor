@@ -1,0 +1,12 @@
+{
+  "name": "luna-blindando-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "react": "19.1.0",
+    "satori": "0.26.0",
+    "@resvg/resvg-js": "2.6.2",
+    "sharp": "0.35.5"
+  }
+}

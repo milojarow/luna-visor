@@ -163,4 +163,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS meta_media_imports(
 if(!db.prepare('PRAGMA table_info(meta_media_imports)').all().some(c=>c.name==='content_hash'))db.exec('ALTER TABLE meta_media_imports ADD COLUMN content_hash TEXT');
 db.exec('CREATE INDEX IF NOT EXISTS idx_meta_import_blob ON meta_media_imports(client_id,content_hash)');
 
+db.exec(`CREATE TABLE IF NOT EXISTS brand_media_renders(cache_key TEXT PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES clients(id),file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE)`);
+
 module.exports = db;

@@ -85,6 +85,7 @@ router.get('/', (req, res) => {
     'GET /api/files/{id}',
     ...(client.is_private ? ['GET /api/files/{id}/content'] : []),
     ...(!client.is_private && client.is_ephemeral ? ['POST /api/files/import-meta'] : []),
+    ...(client.slug === 'blindando-post-preview-temporal' && client.is_ephemeral && !client.is_private ? ['POST /api/files/render-blindando'] : []),
     'POST /api/files/upload',
     'POST /api/files/{id}/replace',
     'DELETE /api/files/{id}',
