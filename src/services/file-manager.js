@@ -111,6 +111,13 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
   return { finalExt, finalMimeType, finalSize, hasResized, hasThumbnail };
 }
 
+function cleanupPublicOutputs(uuid) {
+  let names;try{names=fs.readdirSync(config.MEDIA_FILES_PATH)}catch{return;}
+  for(const name of names) {
+    if(name.startsWith(uuid+'.')||name.startsWith(uuid+'-'))try{fs.unlinkSync(path.join(config.MEDIA_FILES_PATH,name))}catch{}
+  }
+}
+
 async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId, apiKeyId = null) {
   if (privateFiles.clientIsPrivate(clientId)) return privateFiles.savePrivate(tempPath, originalName, clientId, apiKeyId);
   const ext = path.extname(originalName).slice(1).toLowerCase();
@@ -124,16 +131,21 @@ async function saveFile(tempPath, originalName, mimeType, sizeBytes, clientId, a
   let processed;
   try {
     processed = await processUpload(tempPath, ext, type, uuid, clientId);
+  } catch(error) {
+    cleanupPublicOutputs(uuid);throw error;
   } finally {
     try { fs.unlinkSync(tempPath); } catch {}
   }
 
   const mime = processed.finalMimeType || mimeType;
 
+  try {
   db.prepare(`
     INSERT INTO files (id, original_name, extension, mime_type, size_bytes, client_id, api_key_id, type, has_thumbnail, has_resized)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(uuid, stripReEncodedExtension(originalName), processed.finalExt, mime, processed.finalSize, clientId, apiKeyId, type, processed.hasThumbnail, processed.hasResized);
+
+  } catch(error) { cleanupPublicOutputs(uuid);throw error; }
 
   return db.prepare('SELECT * FROM files WHERE id = ?').get(uuid);
 }

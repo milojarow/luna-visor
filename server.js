@@ -73,6 +73,9 @@ app.get('/socios', (req, res) => {
 // Public OpenAPI 3.0.3 spec (before auth middleware)
 app.use('/api', require('./src/routes/openapi'));
 
+// Public read-only job tokens can only redirect to PUBLIC CDN objects.
+app.use('/api/media-jobs', require('./src/routes/media-jobs'));
+
 // Auth middleware for everything else
 app.use(requireAuth);
 

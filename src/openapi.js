@@ -6,7 +6,7 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.13.0',
+    version: '1.14.0',
     description: [
       'CDN manager for solutions45.com. Public vaults deliver files at https://cdn.solutions45.com/{uuid}.{ext}. Private vaults keep bytes outside that directory and require client-scoped authorization at GET /api/files/{id}/content.',
       '',
@@ -721,6 +721,19 @@ module.exports = {
           403: { $ref: '#/components/responses/Forbidden' },
         },
       },
+    },
+    '/files/import-meta': {
+      post: {
+        tags:['Files'],summary:'Import public Meta media into a client-scoped 24h vault.',
+        description:'Client keys, scoped partners or owner only; admin keys denied. Requires a public ephemeral vault. HTTPS Meta image/video hosts only, redirects revalidated, no API credentials in source URL. Raster images max8MiB and MP4 max128MiB, bounded streaming/concurrency/queue,2GiB imported-vault quota and1GiB free disk reserve. Signed source URLs are hashed, never persisted. Fresh cache hits200; a new/deduplicated job202 with a read-only poll URL. Never use this for private attachments.',
+        security:[{apiKeyAuth:[]},{cookieAuth:[]}],
+        requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['url'],properties:{url:{type:'string',format:'uri'},client_id:{type:'integer',description:'Owner or multi-vault partner only; client key scope is implicit.'}}}}}},
+        responses:{200:{description:'Ready: id,cdn_url,cached.'},202:{description:'Pending: status,poll_url,retry_after. Poll HEAD to resolve final CDN URL without downloading bytes.'},400:{$ref:'#/components/responses/BadRequest'},401:{$ref:'#/components/responses/Unauthorized'},403:{$ref:'#/components/responses/Forbidden'},429:{description:'Too many new imports.'},507:{description:'Quota or disk reserve reached.'}}
+      }
+    },
+    '/media-jobs/{token}': {
+      parameters:[{in:'path',name:'token',required:true,schema:{type:'string',pattern:'^[0-9a-f]{48}$'}}],
+      get:{tags:['Files'],summary:'Read-only, expiring capability for a PUBLIC media job.',security:[],description:'No write or import occurs here. A 192bit token issued by an authenticated public-vault job waits briefly and redirects307 only to public CDN files. HEAD supports metadata resolution. CORS is public without credentials, responses no-store. Unknown/expired token404; private file results forbidden.',responses:{307:{description:'Location points at the public CDN.'},202:{description:'Still pending; Retry-After1.'},404:{$ref:'#/components/responses/NotFound'},502:{description:'Media unavailable.'}}}
     },
     '/files/{id}/content': {
       parameters: [{ $ref: '#/components/parameters/FileId' }],
