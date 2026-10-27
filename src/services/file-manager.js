@@ -14,6 +14,13 @@ const VECTOR_EXTS = new Set(['svg']);
 const LOTTIE_EXTS = new Set(['lottie']);
 const RE_ENCODED_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS]);
 
+// Copies may originate in owner-only temporary storage. Public CDN outputs
+// must be readable by the separate Caddy user; private files use their own service.
+function copyPublicFile(source, destination) {
+  fs.copyFileSync(source, destination);
+  fs.chmodSync(destination, 0o644);
+}
+
 function getFileType(ext) {
   if (IMAGE_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -41,7 +48,7 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
   if(ext==='ico'&&!client?.is_ephemeral&&!client?.preserve_format)throw Error('ICO requires a byte-preserving vault');
   if (client?.is_ephemeral || client?.preserve_format) {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
-    fs.copyFileSync(tempPath, destPath);
+    copyPublicFile(tempPath, destPath);
     return {
       finalExt: ext,
       finalMimeType: ext === 'ico' ? 'image/vnd.microsoft.icon' : '',
@@ -68,7 +75,7 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
     let videoPath;
     if (ext === 'mp4') {
       videoPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.mp4`);
-      fs.copyFileSync(tempPath, videoPath);
+      copyPublicFile(tempPath, videoPath);
       finalSize = fs.statSync(videoPath).size;
     } else {
       const { outputPath, size } = await convertVideoToMp4(tempPath, uuid);
@@ -85,18 +92,18 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
     }
   } else if (type === 'audio') {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
-    fs.copyFileSync(tempPath, destPath);
+    copyPublicFile(tempPath, destPath);
     finalMimeType = 'audio/mpeg';
     finalSize = fs.statSync(destPath).size;
   } else if (type === 'vector') {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.svg`);
-    fs.copyFileSync(tempPath, destPath);
+    copyPublicFile(tempPath, destPath);
     finalExt = 'svg';
     finalMimeType = 'image/svg+xml';
     finalSize = fs.statSync(destPath).size;
   } else if (type === 'lottie') {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.lottie`);
-    fs.copyFileSync(tempPath, destPath);
+    copyPublicFile(tempPath, destPath);
     finalExt = 'lottie';
     const fd = fs.openSync(destPath, 'r');
     const head = Buffer.alloc(4);
@@ -192,7 +199,7 @@ async function copyFile(fileId, targetClientId) {
   for (const f of matches) {
     const dst = f.replace(fileId, newUuid);
     try {
-      fs.copyFileSync(
+      copyPublicFile(
         path.join(config.MEDIA_FILES_PATH, f),
         path.join(config.MEDIA_FILES_PATH, dst),
       );
