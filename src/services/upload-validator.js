@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ALLOWED_EXTS = {
-  image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif'],
+  image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'ico'],
   video: ['mp4', 'mov', 'webm', 'mkv'],
   audio: ['mp3'],
   vector: ['svg'],
@@ -47,6 +47,25 @@ function sanitizeOriginalName(name) {
 }
 
 async function detectKind(filePath, ext) {
+  if (ext === 'ico') {
+    const fd=fs.openSync(filePath,'r');
+    try{
+      const length=fs.fstatSync(fd).size,header=Buffer.alloc(6);
+      if(fs.readSync(fd,header,0,6,0)!==6||header.readUInt16LE(0)!==0||header.readUInt16LE(2)!==1)throw new ValidationError(400,'Invalid ICO header');
+      const count=header.readUInt16LE(4);
+      if(count<1||count>64||length<6+16*count)throw new ValidationError(400,'Invalid ICO directory');
+      const directory=Buffer.alloc(16*count);fs.readSync(fd,directory,0,directory.length,6);
+      for(let i=0;i<count;i++){
+        const size=directory.readUInt32LE(i*16+8),offset=directory.readUInt32LE(i*16+12);
+        if(size<8||offset<6+16*count||offset+size>length)throw new ValidationError(400,'Invalid ICO image bounds');
+        const image=Buffer.alloc(8);fs.readSync(fd,image,0,8,offset);
+        const png=image.equals(Buffer.from([137,80,78,71,13,10,26,10]));
+        const dib=size>=40&&[40,108,124].includes(image.readUInt32LE(0));
+        if(!png&&!dib)throw new ValidationError(400,'ICO must contain PNG or DIB image data');
+      }
+      return {kind:'image',mime:'image/vnd.microsoft.icon'};
+    }finally{fs.closeSync(fd);}
+  }
   if (ext === 'svg') {
     const fd = await fs.promises.open(filePath, 'r');
     try {
@@ -101,8 +120,9 @@ async function detectKind(filePath, ext) {
   return { kind, mime: detected.mime };
 }
 
-async function validateUpload(filePath, originalName) {
+async function validateUpload(filePath, originalName, options = {}) {
   const ext = path.extname(String(originalName || '')).slice(1).toLowerCase();
+  if(ext==='ico'&&!options.preserveFormat)throw new ValidationError(400,'ICO requires a byte-preserving vault');
   const declaredKind = EXT_TO_KIND[ext];
   if (!declaredKind) {
     throw new ValidationError(

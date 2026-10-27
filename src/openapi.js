@@ -6,10 +6,11 @@ module.exports = {
   openapi: '3.0.3',
   info: {
     title: 'Luna Visor CDN API',
-    version: '1.12.0',
+    version: '1.13.0',
     description: [
       'CDN manager for solutions45.com. Public vaults deliver files at https://cdn.solutions45.com/{uuid}.{ext}. Private vaults keep bytes outside that directory and require client-scoped authorization at GET /api/files/{id}/content.',
       '',
+      'ICO application icons are supported only in public byte-preserving (raw/ephemeral) vaults, with directory/image bounds validated. Normal image vaults still transform supported raster images to WebP.',
       '## Authentication',
       '',
       'Two methods, checked in this order:',

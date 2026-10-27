@@ -234,7 +234,7 @@ router.post('/upload', uploadLimiter, upload.array('files', 20), async (req, res
   const results = [];
   for (const f of req.files) {
     try {
-      if (!privateFiles.clientIsPrivate(client_id)) await validateUpload(f.path, f.originalname);
+      if (!privateFiles.clientIsPrivate(client_id)) await validateUpload(f.path, f.originalname, {preserveFormat:Boolean(client.preserve_format || client.is_ephemeral)});
       const cleanName = sanitizeOriginalName(f.originalname);
       const file = await saveFile(f.path, cleanName, f.mimetype, f.size, client_id, apiKeyIdFor(req, client_id));
       results.push(fileToResponse(file));
@@ -284,7 +284,10 @@ router.post('/:id/replace', uploadLimiter, upload.single('file'), async (req, re
     return res.status(400).json({ error: 'File required' });
   }
   try {
-    if (!privateFiles.fileIsPrivate(req.params.id)) await validateUpload(req.file.path, req.file.originalname);
+    if (!privateFiles.fileIsPrivate(req.params.id)) {
+      const policy=db.prepare('SELECT c.preserve_format,c.is_ephemeral FROM files f JOIN clients c ON c.id=f.client_id WHERE f.id=?').get(req.params.id);
+      await validateUpload(req.file.path, req.file.originalname,{preserveFormat:Boolean(policy?.preserve_format || policy?.is_ephemeral)});
+    }
     const cleanName = sanitizeOriginalName(req.file.originalname);
     const file = await replaceFile(req.params.id, req.file.path, cleanName, req.file.mimetype, req.file.size);
     if (!file) return res.status(404).json({ error: 'File not found' });

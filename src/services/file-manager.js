@@ -7,7 +7,7 @@ const privateFiles = require('./private-files');
 const { processImageWithPolicy, convertVideoToMp4, extractThumbnail } = require('./file-processor');
 const { getImagePolicy } = require('./branding');
 
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif']);
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif', 'ico']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'mkv']);
 const AUDIO_EXTS = new Set(['mp3']);
 const VECTOR_EXTS = new Set(['svg']);
@@ -38,12 +38,13 @@ async function processUpload(tempPath, ext, type, uuid, clientId) {
   //   preserve_format → permanent raw vault; nothing ever expires it.
   // Both set at create time; neither can be flipped on an existing client.
   const client = db.prepare('SELECT is_ephemeral, preserve_format FROM clients WHERE id = ?').get(clientId);
+  if(ext==='ico'&&!client?.is_ephemeral&&!client?.preserve_format)throw Error('ICO requires a byte-preserving vault');
   if (client?.is_ephemeral || client?.preserve_format) {
     const destPath = path.join(config.MEDIA_FILES_PATH, `${uuid}.${ext}`);
     fs.copyFileSync(tempPath, destPath);
     return {
       finalExt: ext,
-      finalMimeType: '',
+      finalMimeType: ext === 'ico' ? 'image/vnd.microsoft.icon' : '',
       finalSize: fs.statSync(destPath).size,
       hasResized: 0,
       hasThumbnail: 0,
